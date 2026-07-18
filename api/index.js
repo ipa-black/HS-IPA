@@ -1,19 +1,10 @@
 const axios = require('axios');
 
-// === 1. توكن البوت (مقسم ومشفر) ===
-const T_P1 = "ODczNDk2NzIyNTpBQUUwbG16YV8="; 
-const T_P2 = "T0U0OTB3cklOR1dTM1kzZjh4eWNmOFlpVHc=";
-const BOT_TOKEN = Buffer.from(T_P1, 'base64').toString('utf-8') + Buffer.from(T_P2, 'base64').toString('utf-8');
-
-// === 2. توكن GitHub (مقسم ومشفر) ===
-const GH_T_P1 = "Z2hwX1AzbDR0dGJhZHRvYUlXdHQ="; 
-const GH_T_P2 = "SG9hMHpDQmI3VzdJenQxc3R3NVc=";
-const GITHUB_TOKEN = Buffer.from(GH_T_P1, 'base64').toString('utf-8') + Buffer.from(GH_T_P2, 'base64').toString('utf-8');
-
-// === 3. مسار مستودع GitHub (مقسم ومشفر) ===
-const GH_R_P1 = "SXBhLWJsYQ=="; 
-const GH_R_P2 = "Y2svY29kZQ==";
-const GITHUB_REPO = Buffer.from(GH_R_P1, 'base64').toString('utf-8') + Buffer.from(GH_R_P2, 'base64').toString('utf-8');
+// === الإعدادات المباشرة للبوت الحالي (بدون أي تشفير) ===
+const BOT_TOKEN = "8734967225:AAE0lmza_OE490wrINGWS3Y3f8xycf8YiTw"; 
+const GITHUB_TOKEN = "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"; 
+const GITHUB_REPO = "Ipa-black/HS-IPA"; 
+const DB_FILE = "db.json"; 
 
 // === قائمة المشرفين الأساسيين ===
 const SUPER_ADMINS = ["6799794121", "8509558203"]; 
@@ -31,7 +22,7 @@ async function tg(method, data) {
 
 async function getDb() {
     try {
-        const res = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/db.json`, {
+        const res = await axios.get(`https://api.github.com/repos/${GITHUB_REPO}/contents/${DB_FILE}`, {
             headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Accept': 'application/vnd.github.v3+json', 'Cache-Control': 'no-cache' }
         });
         const data = JSON.parse(Buffer.from(res.data.content, 'base64').toString('utf-8'));
@@ -47,7 +38,7 @@ async function saveDb(data, sha, msg = "Database update") {
         const content = Buffer.from(JSON.stringify(data, null, 4)).toString('base64');
         const body = { message: msg, content };
         if (sha) body.sha = sha;
-        await axios.put(`https://api.github.com/repos/${GITHUB_REPO}/contents/db.json`, body, {
+        await axios.put(`https://api.github.com/repos/${GITHUB_REPO}/contents/${DB_FILE}`, body, {
             headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Accept': 'application/vnd.github.v3+json' }
         });
         return true;
@@ -102,7 +93,6 @@ async function handleMessage(msg) {
         return;
     }
 
-    // فحص كود معين
     if (state === "waiting_for_code_to_check") {
         const targetCode = text.trim();
         db.states[userId] = ""; 
@@ -122,14 +112,13 @@ async function handleMessage(msg) {
         } else if (historyRecord) {
             responseText = `📤 *نتيجة الفحص:*\n\nالكود: \`${targetCode}\`\nالحالة: *تم سحبه سابقاً*\n📅 تاريخ وساعة السحب: \`${historyRecord.time}\`\n👤 بواسطة آيدي: \`${historyRecord.by}\``;
         } else {
-            responseText = `❌ *نتيجة الفحص:*\n\nالكود: \`${targetCode}\`\nالحالة: *غير موجود* (لم يتم إضافته للمخزن مطلقاً، أو قد يكون حُذف يدوياً).`;
+            responseText = `❌ *نتيجة الفحص:*\n\nالكود: \`${targetCode}\`\nالحالة: *غير موجود*.`;
         }
 
         await tg('sendMessage', { chat_id: chatId, text: responseText, parse_mode: "Markdown", reply_markup: mainKeyboard() });
         return;
     }
 
-    // إضافة أكواد
     if (state === "waiting_for_codes") {
         let newCodes = [];
 
@@ -241,7 +230,6 @@ async function handleCallback(call) {
         let codesToShow = db.vault.slice(start, end);
 
         let keyboard = [];
-        
         for (let i = 0; i < codesToShow.length; i++) {
             let codeText = codesToShow[i];
             let cbData = `pc_${codeText}`;

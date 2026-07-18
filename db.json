@@ -1,7 +1,9 @@
 {
-    "vault": [],
+    "vault": [
+        "11"
+    ],
     "states": {
-        "8509558203": "waiting_for_codes"
+        "8509558203": ""
     },
     "total_used": 0,
     "history": {}

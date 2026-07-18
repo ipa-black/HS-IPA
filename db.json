@@ -1,8 +1,10 @@
 {
-    "vault": [],
+    "vault": [
+        "846384637"
+    ],
     "states": {
         "8509558203": "",
-        "6799794121": "waiting_for_codes"
+        "6799794121": ""
     },
     "total_used": 2,
     "history": {

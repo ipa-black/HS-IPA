@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 // === الإعدادات المباشرة للبوت الحالي (بدون أي تشفير) ===
-const BOT_TOKEN = "1118734967225:AAE0lmza_OE490wrINGWS3Y3f8xycf8YiTw"; 
+const BOT_TOKEN = "8734967225:AAE0lmza_OE490wrINGWS3Y3f8xycf8YiTw"; 
 const GITHUB_TOKEN = "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"; 
 const GITHUB_REPO = "Ipa-black/HS-IPA"; 
 const DB_FILE = "db.json"; 

@@ -1,0 +1,48 @@
+name: 1. Setup Master Environment (Cache Arsenal)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0' # يعمل تلقائياً فجر كل يوم أحد لتحديث الأدوات
+
+jobs:
+  build-master-cache:
+    runs-on: macos-latest
+    steps:
+      - name: Generate Dynamic Cache Key
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Setup Ultimate Master Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ios_master_env
+          key: ios-master-cache-${{ steps.date.outputs.date }}
+
+      - name: Download The Ultimate Tools
+        run: |
+          mkdir -p ~/ios_master_env/tools
+          
+          echo "1. تثبيت class-dump و ldid..."
+          brew update
+          brew install class-dump ldid
+          cp $(which class-dump) ~/ios_master_env/tools/
+          cp $(which ldid) ~/ios_master_env/tools/
+          
+          echo "2. تحميل jtool2 (للهندسة العكسية المتقدمة)..."
+          curl -L "http://newosxbook.com/tools/jtool2.tar" -o jtool2.tar
+          tar -xvf jtool2.tar
+          chmod +x jtool2
+          mv jtool2 ~/ios_master_env/tools/
+          
+          echo "3. تحميل zsign (للتوقيع والحقن المباشر)..."
+          git clone https://github.com/zhlynn/zsign.git
+          cd zsign && clang++ *.cpp common/*.cpp -lcrypto -O3 -o zsign
+          cp zsign ~/ios_master_env/tools/
+          cd ..
+          
+          echo "4. تحميل بيئة Theos الشاملة..."
+          git clone --recursive https://github.com/theos/theos.git ~/ios_master_env/theos
+          git clone https://github.com/theos/sdks.git ~/ios_master_env/theos/sdks
+          
+          echo "تم تجهيز المستودع وحفظه في الكاش بنجاح!"

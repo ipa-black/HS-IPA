@@ -33,13 +33,7 @@ jobs:
           chmod +x class-dump
           mv class-dump ~/ios_master_env/tools/
           
-          echo "3. تحميل zsign (للتوقيع والحقن المباشر)..."
-          git clone https://github.com/zhlynn/zsign.git
-          cd zsign && clang++ *.cpp common/*.cpp -lcrypto -O3 -o zsign
-          cp zsign ~/ios_master_env/tools/
-          cd ..
-          
-          echo "4. تحميل بيئة Theos الشاملة..."
+          echo "3. تحميل بيئة Theos الشاملة (الأهم لبناء الأكواد)..."
           git clone --recursive https://github.com/theos/theos.git ~/ios_master_env/theos
           git clone https://github.com/theos/sdks.git ~/ios_master_env/theos/sdks
           

@@ -1,0 +1,52 @@
+name: 2. Analyze And Extract Dylib
+
+on:
+  workflow_dispatch:
+    inputs:
+      dylib_url:
+        description: 'ضع رابط التحميل المباشر لملف الـ dylib هنا'
+        required: true
+        type: string
+
+jobs:
+  analyze:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore Ultimate Master Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/ios_master_env
+          key: ios-master-cache-latest-run
+          restore-keys: |
+            ios-master-cache-
+
+      - name: Add Arsenal to PATH
+        run: echo "$HOME/ios_master_env/tools" >> $GITHUB_PATH
+
+      - name: Download Target Dylib
+        run: |
+          curl -L "${{ inputs.dylib_url }}" -o target.dylib
+          echo "تم تحميل ملف dylib بنجاح."
+
+      - name: Extract Headers & Analyze
+        run: |
+          mkdir -p analysis_results/Headers
+          
+          # استخراج الهيدرز باستخدام class-dump
+          class-dump -H target.dylib -o analysis_results/Headers/ || echo "فشل class-dump، قد يكون الملف مشفراً."
+          
+          # تحليل الكلاسات والأوامر الأساسية
+          otool -l target.dylib > analysis_results/load_commands.txt
+          nm -g target.dylib > analysis_results/symbols.txt
+          
+      - name: Zip Results
+        run: zip -r Dylib_Analysis_Results.zip analysis_results/
+
+      - name: Upload Results as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dylib-Analysis-And-Headers
+          path: Dylib_Analysis_Results.zip

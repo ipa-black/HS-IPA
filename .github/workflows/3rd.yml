@@ -31,7 +31,6 @@ jobs:
 
           echo "Using Official Apple SDK: $APPLE_SDK"
 
-          # تم إضافة CoreGraphics هنا لحل مشكلة أوامر الـ Animation
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
             -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \
@@ -42,9 +41,12 @@ jobs:
             
           echo "تم بناء الـ Dylib بنجاح!"
 
-      - name: Sign Dylib with ldid
+      - name: Install Dependencies & Sign
         run: |
-          echo "جاري توقيع الملف باستخدام ldid ليعمل على أجهزة iOS..."
+          echo "جاري تثبيت حزم التوقيع الأساسية (ldid & libplist)..."
+          brew install ldid
+          
+          echo "جاري توقيع الملف ليعمل على أجهزة iOS..."
           ldid -S MyCustomTweak.dylib
           echo "تم التوقيع بنجاح!"
           

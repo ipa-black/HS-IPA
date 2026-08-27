@@ -2,44 +2,62 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
+#import <sys/stat.h>
+#import <unistd.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import "fishhook.h" // مكتبة الحماية العميقة
 
 // ==========================================
-// 1. كود تخطي حماية المتاجر الخارجية (Anti-Sideloading Bypass)
+// 1. التخطي العميق (C-Level Anti-Sideloading Bypass)
 // ==========================================
-static IMP original_hasEmbeddedMobileProvision;
-BOOL replaced_hasEmbeddedMobileProvision(id self, SEL _cmd) {
-    // إقناع اللعبة أنه لا يوجد ملف توقيع خارجي (شهادة مطور)
-    return NO; 
+
+static int (*original_stat)(const char *restrict path, struct stat *restrict buf);
+int replaced_stat(const char *restrict path, struct stat *restrict buf) {
+    if (path && strstr(path, "embedded.mobileprovision")) {
+        return -1; // كذبة النظام: الملف غير موجود!
+    }
+    return original_stat(path, buf);
+}
+
+static int (*original_lstat)(const char *restrict path, struct stat *restrict buf);
+int replaced_lstat(const char *restrict path, struct stat *restrict buf) {
+    if (path && strstr(path, "embedded.mobileprovision")) {
+        return -1; 
+    }
+    return original_lstat(path, buf);
+}
+
+static int (*original_access)(const char *path, int amode);
+int replaced_access(const char *path, int amode) {
+    if (path && strstr(path, "embedded.mobileprovision")) {
+        return -1;
+    }
+    return original_access(path, amode);
 }
 
 static IMP original_appStoreReceiptURL;
 NSURL* replaced_appStoreReceiptURL(id self, SEL _cmd) {
-    // إرجاع مسار وهمي لإيصال شراء رسمي من متجر أبل
     return [NSURL fileURLWithPath:[[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"_MASReceipt/receipt"]];
 }
 
-static __inline__ __attribute__((always_inline)) void applyAntiSideloadBypass() {
-    Class bundleClass = objc_getClass("NSBundle");
+static __inline__ __attribute__((always_inline)) void applyUltimateBypass() {
+    struct rebinding rebindings[] = {
+        {"stat", replaced_stat, (void *)&original_stat},
+        {"lstat", replaced_lstat, (void *)&original_lstat},
+        {"access", replaced_access, (void *)&original_access}
+    };
+    rebind_symbols(rebindings, 3);
     
-    // 1. تخطي فحص ملف التوقيع
-    Method m1 = class_getInstanceMethod(bundleClass, NSSelectorFromString(@"hasEmbeddedMobileProvision"));
-    if (m1) {
-        original_hasEmbeddedMobileProvision = method_setImplementation(m1, (IMP)replaced_hasEmbeddedMobileProvision);
-    }
-    
-    // 2. تخطي فحص إيصال متجر أبل
-    Method m2 = class_getInstanceMethod(bundleClass, @selector(appStoreReceiptURL));
+    Method m2 = class_getInstanceMethod([NSBundle class], @selector(appStoreReceiptURL));
     if (m2) {
         original_appStoreReceiptURL = method_setImplementation(m2, (IMP)replaced_appStoreReceiptURL);
     }
     
-    NSLog(@"[IPA BLACK] - Anti-Sideloading Bypass Activated Successfully!");
+    NSLog(@"[IPA BLACK] - C-Level Fishhook Bypass Activated!");
 }
 
-
 // ==========================================
-// 2. طبقة الحماية المتقدمة (C-Level Security)
+// 2. طبقة الحماية (Anti-Debug & Anti-Prediction)
 // ==========================================
 static __inline__ __attribute__((always_inline)) void ipa_black_anti_debug() {
     NSLog(@"[IPA BLACK] - Anti-Debug Initialized.");
@@ -48,7 +66,6 @@ static __inline__ __attribute__((always_inline)) void ipa_black_anti_debug() {
 static __inline__ __attribute__((always_inline)) void ipa_black_anti_prediction() {
     NSLog(@"[IPA BLACK] - Prediction Engine Hooked and Secured.");
 }
-
 
 // ==========================================
 // 3. الواجهة وتتحكم الميزات (Mod Menu)
@@ -74,11 +91,9 @@ static UITextField *secureTextField = nil;
     UIView *secureView = secureTextField.subviews.firstObject;
     secureView.userInteractionEnabled = YES;
     
-    // إعداد حاوية القائمة
     menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 340, 400)];
     menuContainer.center = window.center;
     
-    // خلفية زجاجية معتمة (Blur Effect)
     UIVisualEffectView *blurMenu = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
     blurMenu.frame = menuContainer.bounds;
     blurMenu.layer.cornerRadius = 20;
@@ -87,9 +102,7 @@ static UITextField *secureTextField = nil;
     blurMenu.layer.borderColor = [UIColor cyanColor].CGColor;
     [menuContainer addSubview:blurMenu];
     
-    // ==========================================
     // رأس القائمة: اسم IPA Black + الصورة المرفقة
-    // ==========================================
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 15, 340, 50)];
     
     UIImageView *logoView = [[UIImageView alloc] initWithFrame:CGRectMake(55, 5, 40, 40)];
@@ -99,7 +112,6 @@ static UITextField *secureTextField = nil;
     logoView.layer.borderColor = [UIColor cyanColor].CGColor;
     logoView.contentMode = UIViewContentModeScaleAspectFill;
     
-    // تحميل الصورة
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/08/178785429458971.jpeg"]];
         if (imgData) {
@@ -126,14 +138,12 @@ static UITextField *secureTextField = nil;
     subTitle.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [menuContainer addSubview:subTitle];
     
-    // --- أزرار التفعيل (Switches) ---
     int startY = 100;
     
     [self addSwitchToView:menuContainer yPos:startY title:@"السهم الطويل (Long Line)" action:@selector(toggleLongLine:)];
     [self addSwitchToView:menuContainer yPos:startY+45 title:@"إخفاء من التصوير (Stream Proof)" action:@selector(toggleStreamProof:) isOn:YES];
     [self addSwitchToView:menuContainer yPos:startY+90 title:@"تخطي الحماية (Anti-Ban)" action:@selector(toggleAntiBan:) isOn:YES];
     
-    // --- زر التلجرام ---
     UIButton *tgButton = [UIButton buttonWithType:UIButtonTypeSystem];
     tgButton.frame = CGRectMake(40, startY+145, 260, 45);
     [tgButton setTitle:@"Join Telegram: hl00ss" forState:UIControlStateNormal];
@@ -144,7 +154,6 @@ static UITextField *secureTextField = nil;
     [tgButton addTarget:self action:@selector(openTelegram) forControlEvents:UIControlEventTouchUpInside];
     [menuContainer addSubview:tgButton];
     
-    // --- زر الإغلاق ---
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     closeBtn.frame = CGRectMake(40, startY+200, 260, 45);
     [closeBtn setTitle:@"إغلاق القائمة (Close Menu)" forState:UIControlStateNormal];
@@ -234,14 +243,10 @@ static UITextField *secureTextField = nil;
 // 4. نقطة انطلاق الـ Dylib (Constructor)
 // ==========================================
 static void __attribute__((constructor)) initialize_ipa_black() {
-    // 1. تفعيل تخطي الحماية من المتاجر الخارجية فوراً لتجنب إغلاق اللعبة
-    applyAntiSideloadBypass();
-    
-    // 2. تفعيل باقي الحمايات
+    applyUltimateBypass();
     ipa_black_anti_debug();
     ipa_black_anti_prediction();
     
-    // 3. إظهار الزر العائم بعد 5 ثوانٍ
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (window) {
@@ -258,7 +263,6 @@ static void __attribute__((constructor)) initialize_ipa_black() {
             
             [floatingBtn addTarget:[IPABlackMenu class] action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
             
-            // تغليف الزر العائم ليكون مخفياً من تصوير الشاشة (Stream-Proof)
             UITextField *secureFloatingField = [[UITextField alloc] initWithFrame:floatingBtn.frame];
             secureFloatingField.secureTextEntry = YES;
             secureFloatingField.userInteractionEnabled = YES;

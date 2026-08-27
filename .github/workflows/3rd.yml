@@ -1,0 +1,52 @@
+name: 3. Compile And Sign Custom Dylib
+
+on:
+  push:
+    paths:
+      - 'source/*.m'  # يعمل تلقائياً عند إضافة أو تعديل أي كود هنا
+      - 'source/*.x'  # يدعم ملفات Theos أيضا
+
+jobs:
+  build_and_sign:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore Ultimate Master Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/ios_master_env
+          key: ios-master-cache-latest-run
+          restore-keys: |
+            ios-master-cache-
+
+      - name: Add Arsenal to PATH
+        run: echo "$HOME/ios_master_env/tools" >> $GITHUB_PATH
+
+      - name: Compile Code to Dylib
+        run: |
+          # تحديد مسار SDK و Theos من الكاش
+          CACHED_SDK=$(ls -d $HOME/ios_master_env/theos/sdks/iPhoneOS*.sdk | head -n 1 || xcrun --sdk iphoneos --show-sdk-path)
+          THEOS_INCLUDE="$HOME/ios_master_env/theos/include"
+
+          # ترجمة ملفات الكود إلى مكتبة ديناميكية (Dylib)
+          clang -dynamiclib -arch arm64 -isysroot $CACHED_SDK \
+            -I$THEOS_INCLUDE \
+            -framework Foundation \
+            -framework UIKit \
+            -o MyCustomTweak.dylib source/*.m
+            
+          echo "تم بناء الـ Dylib بنجاح!"
+
+      - name: Sign Dylib with ldid
+        run: |
+          echo "جاري توقيع الملف باستخدام ldid ليعمل على أجهزة iOS..."
+          ldid -S MyCustomTweak.dylib
+          echo "تم التوقيع بنجاح!"
+          
+      - name: Upload Final Signed Dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ready-To-Use-Signed-Dylib
+          path: MyCustomTweak.dylib

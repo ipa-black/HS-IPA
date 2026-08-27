@@ -5,7 +5,41 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 // ==========================================
-// 1. طبقة الحماية المتقدمة (C-Level Security)
+// 1. كود تخطي حماية المتاجر الخارجية (Anti-Sideloading Bypass)
+// ==========================================
+static IMP original_hasEmbeddedMobileProvision;
+BOOL replaced_hasEmbeddedMobileProvision(id self, SEL _cmd) {
+    // إقناع اللعبة أنه لا يوجد ملف توقيع خارجي (شهادة مطور)
+    return NO; 
+}
+
+static IMP original_appStoreReceiptURL;
+NSURL* replaced_appStoreReceiptURL(id self, SEL _cmd) {
+    // إرجاع مسار وهمي لإيصال شراء رسمي من متجر أبل
+    return [NSURL fileURLWithPath:[[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"_MASReceipt/receipt"]];
+}
+
+static __inline__ __attribute__((always_inline)) void applyAntiSideloadBypass() {
+    Class bundleClass = objc_getClass("NSBundle");
+    
+    // 1. تخطي فحص ملف التوقيع
+    Method m1 = class_getInstanceMethod(bundleClass, NSSelectorFromString(@"hasEmbeddedMobileProvision"));
+    if (m1) {
+        original_hasEmbeddedMobileProvision = method_setImplementation(m1, (IMP)replaced_hasEmbeddedMobileProvision);
+    }
+    
+    // 2. تخطي فحص إيصال متجر أبل
+    Method m2 = class_getInstanceMethod(bundleClass, @selector(appStoreReceiptURL));
+    if (m2) {
+        original_appStoreReceiptURL = method_setImplementation(m2, (IMP)replaced_appStoreReceiptURL);
+    }
+    
+    NSLog(@"[IPA BLACK] - Anti-Sideloading Bypass Activated Successfully!");
+}
+
+
+// ==========================================
+// 2. طبقة الحماية المتقدمة (C-Level Security)
 // ==========================================
 static __inline__ __attribute__((always_inline)) void ipa_black_anti_debug() {
     NSLog(@"[IPA BLACK] - Anti-Debug Initialized.");
@@ -17,7 +51,7 @@ static __inline__ __attribute__((always_inline)) void ipa_black_anti_prediction(
 
 
 // ==========================================
-// 2. الواجهة وتتحكم الميزات (Mod Menu)
+// 3. الواجهة وتتحكم الميزات (Mod Menu)
 // ==========================================
 @interface IPABlackMenu : NSObject
 @end
@@ -197,12 +231,17 @@ static UITextField *secureTextField = nil;
 @end
 
 // ==========================================
-// 3. نقطة انطلاق الـ Dylib (Constructor)
+// 4. نقطة انطلاق الـ Dylib (Constructor)
 // ==========================================
 static void __attribute__((constructor)) initialize_ipa_black() {
+    // 1. تفعيل تخطي الحماية من المتاجر الخارجية فوراً لتجنب إغلاق اللعبة
+    applyAntiSideloadBypass();
+    
+    // 2. تفعيل باقي الحمايات
     ipa_black_anti_debug();
     ipa_black_anti_prediction();
     
+    // 3. إظهار الزر العائم بعد 5 ثوانٍ
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (window) {
@@ -219,6 +258,7 @@ static void __attribute__((constructor)) initialize_ipa_black() {
             
             [floatingBtn addTarget:[IPABlackMenu class] action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
             
+            // تغليف الزر العائم ليكون مخفياً من تصوير الشاشة (Stream-Proof)
             UITextField *secureFloatingField = [[UITextField alloc] initWithFrame:floatingBtn.frame];
             secureFloatingField.secureTextEntry = YES;
             secureFloatingField.userInteractionEnabled = YES;

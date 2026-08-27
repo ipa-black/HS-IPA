@@ -3,8 +3,8 @@ name: 3. Compile And Sign Custom Dylib
 on:
   push:
     paths:
-      - 'source/*.m'  # يعمل تلقائياً عند إضافة أو تعديل أي كود هنا
-      - 'source/*.x'  # يدعم ملفات Theos أيضا
+      - 'source/*.m'  
+      - 'source/*.x'  
 
 jobs:
   build_and_sign:
@@ -26,12 +26,17 @@ jobs:
 
       - name: Compile Code to Dylib
         run: |
-          # تحديد مسار SDK و Theos من الكاش
-          CACHED_SDK=$(ls -d $HOME/ios_master_env/theos/sdks/iPhoneOS*.sdk | head -n 1 || xcrun --sdk iphoneos --show-sdk-path)
+          # 1. استخدام الـ SDK الرسمي والحديث المدمج في السيرفر (مخصص للآيفون الحقيقي)
+          APPLE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          
+          # 2. الاحتفاظ بمسار Theos فقط للاستفادة من مكتبات التطوير الخاصة به
           THEOS_INCLUDE="$HOME/ios_master_env/theos/include"
 
-          # ترجمة ملفات الكود إلى مكتبة ديناميكية (Dylib)
-          clang -dynamiclib -arch arm64 -isysroot $CACHED_SDK \
+          echo "Using Official Apple SDK: $APPLE_SDK"
+
+          # 3. بناء الكود مع تحديد معمارية الهاتف الحقيقي (arm64) وإصدار iOS 14 كحد أدنى
+          clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
+            -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \
             -framework Foundation \
             -framework UIKit \

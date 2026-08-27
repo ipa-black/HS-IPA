@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
+#import <CoreGraphics/CoreGraphics.h>
 
 // ==========================================
 // 1. طبقة الحماية المتقدمة (C-Level Security)
@@ -39,11 +40,11 @@ static UITextField *secureTextField = nil;
     UIView *secureView = secureTextField.subviews.firstObject;
     secureView.userInteractionEnabled = YES;
     
-    // إعداد حاوية القائمة (تم زيادة الطول قليلاً لاستيعاب العنوان الجديد والشعار)
+    // إعداد حاوية القائمة
     menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 340, 400)];
     menuContainer.center = window.center;
     
-    // خلفية زجاجية معتمة (Blur Effect) لفخامة التصميم
+    // خلفية زجاجية معتمة (Blur Effect)
     UIVisualEffectView *blurMenu = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
     blurMenu.frame = menuContainer.bounds;
     blurMenu.layer.cornerRadius = 20;
@@ -57,7 +58,6 @@ static UITextField *secureTextField = nil;
     // ==========================================
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 15, 340, 50)];
     
-    // صورة الشعار المرفقة من الرابط
     UIImageView *logoView = [[UIImageView alloc] initWithFrame:CGRectMake(55, 5, 40, 40)];
     logoView.layer.cornerRadius = 20;
     logoView.clipsToBounds = YES;
@@ -65,7 +65,7 @@ static UITextField *secureTextField = nil;
     logoView.layer.borderColor = [UIColor cyanColor].CGColor;
     logoView.contentMode = UIViewContentModeScaleAspectFill;
     
-    // تحميل الصورة بشكل غير متزامن (Asynchronous) من الرابط
+    // تحميل الصورة
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/08/178785429458971.jpeg"]];
         if (imgData) {
@@ -77,7 +77,6 @@ static UITextField *secureTextField = nil;
     });
     [headerView addSubview:logoView];
     
-    // عنوان الاسم بجانب الصورة
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(105, 10, 180, 30)];
     title.text = @"IPA Black";
     title.textColor = [UIColor whiteColor];
@@ -86,7 +85,6 @@ static UITextField *secureTextField = nil;
     
     [menuContainer addSubview:headerView];
     
-    // فرعي: 8 Ball Pool VIP
     UILabel *subTitle = [[UILabel alloc] initWithFrame:CGRectMake(0, 65, 340, 20)];
     subTitle.text = @"8 Ball Pool - VIP Hack";
     subTitle.textColor = [UIColor cyanColor];

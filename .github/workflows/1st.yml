@@ -33,8 +33,13 @@ jobs:
           chmod +x class-dump
           mv class-dump ~/ios_master_env/tools/
           
-          echo "3. تحميل بيئة Theos الشاملة (الأهم لبناء الأكواد)..."
+          echo "3. تحميل بيئة Theos الشاملة..."
           git clone --recursive https://github.com/theos/theos.git ~/ios_master_env/theos
+          
+          # حذف المجلد الفارغ الذي أنشأته Theos لتجنب تعارض الملفات
+          rm -rf ~/ios_master_env/theos/sdks
+          
+          echo "4. تحميل الـ SDKs الخاصة بآبل..."
           git clone https://github.com/theos/sdks.git ~/ios_master_env/theos/sdks
           
           echo "تم تجهيز المستودع وحفظه في الكاش بنجاح!"

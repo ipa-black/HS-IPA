@@ -23,11 +23,15 @@ jobs:
         run: |
           mkdir -p ~/ios_master_env/tools
           
-          echo "1. تثبيت class-dump و ldid..."
+          echo "1. تثبيت ldid فقط عبر brew..."
           brew update
-          brew install class-dump ldid
-          cp $(which class-dump) ~/ios_master_env/tools/
+          brew install ldid
           cp $(which ldid) ~/ios_master_env/tools/
+          
+          echo "1.5. تحميل class-dump مباشرة من مستودعات الهندسة العكسية..."
+          curl -L "https://raw.githubusercontent.com/AloneMonkey/MonkeyDev/master/bin/class-dump" -o class-dump
+          chmod +x class-dump
+          mv class-dump ~/ios_master_env/tools/
           
           echo "2. تحميل jtool2 (للهندسة العكسية المتقدمة)..."
           curl -L "http://newosxbook.com/tools/jtool2.tar" -o jtool2.tar

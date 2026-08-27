@@ -1,10 +1,12 @@
 name: 3. Compile And Sign Custom Dylib
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'source/*.m'  
       - 'source/*.x'  
+      - 'source/*.c'
 
 jobs:
   build_and_sign:
@@ -29,6 +31,10 @@ jobs:
           APPLE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           THEOS_INCLUDE="$HOME/ios_master_env/theos/include"
 
+          echo "تحميل مكتبة Fishhook لاختراق حماية C العميقة..."
+          curl -L -o source/fishhook.h https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.h
+          curl -L -o source/fishhook.c https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.c
+
           echo "Using Official Apple SDK: $APPLE_SDK"
 
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
@@ -37,16 +43,13 @@ jobs:
             -framework Foundation \
             -framework UIKit \
             -framework CoreGraphics \
-            -o MyCustomTweak.dylib source/*.m
+            -o MyCustomTweak.dylib source/*.m source/*.c
             
           echo "تم بناء الـ Dylib بنجاح!"
 
       - name: Install Dependencies & Sign
         run: |
-          echo "جاري تثبيت حزم التوقيع الأساسية (ldid & libplist)..."
           brew install ldid
-          
-          echo "جاري توقيع الملف ليعمل على أجهزة iOS..."
           ldid -S MyCustomTweak.dylib
           echo "تم التوقيع بنجاح!"
           

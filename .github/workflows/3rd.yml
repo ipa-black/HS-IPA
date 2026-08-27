@@ -26,20 +26,18 @@ jobs:
 
       - name: Compile Code to Dylib
         run: |
-          # 1. استخدام الـ SDK الرسمي والحديث المدمج في السيرفر (مخصص للآيفون الحقيقي)
           APPLE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          
-          # 2. الاحتفاظ بمسار Theos فقط للاستفادة من مكتبات التطوير الخاصة به
           THEOS_INCLUDE="$HOME/ios_master_env/theos/include"
 
           echo "Using Official Apple SDK: $APPLE_SDK"
 
-          # 3. بناء الكود مع تحديد معمارية الهاتف الحقيقي (arm64) وإصدار iOS 14 كحد أدنى
+          # تم إضافة CoreGraphics هنا لحل مشكلة أوامر الـ Animation
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
             -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \
             -framework Foundation \
             -framework UIKit \
+            -framework CoreGraphics \
             -o MyCustomTweak.dylib source/*.m
             
           echo "تم بناء الـ Dylib بنجاح!"

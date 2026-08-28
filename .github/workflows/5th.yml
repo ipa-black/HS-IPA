@@ -55,24 +55,50 @@ jobs:
           echo "تم العثور على النص في العنوان: $CLEAN_ADDR"
           echo "clean_addr=$CLEAN_ADDR" >> $GITHUB_OUTPUT
 
-      - name: 4. Find XREFs using Radare2 Engine
+            - name: 4. The VTable Hunter Engine
         run: |
           BINARY="${{ steps.locate.outputs.binary_path }}"
           ADDR="${{ steps.hunt.outputs.clean_addr }}"
           
           mkdir -p Sniper_Results
-          echo "جاري البحث العميق عن المراجع المتقاطعة للعنوان 0x$ADDR باستخدام Radare2..."
+          RES="Sniper_Results/XREF_Result.txt"
           
-          # استخدام محرك Radare2 للتحليل الأساسي ثم استخراج المراجع
-          r2 -q -c "aa; axt 0x$ADDR" "$BINARY" > Sniper_Results/XREF_Result.txt
+          echo "🎯 الهدف: البحث المتقدم عن الكلاس (C++ VTable Hunting)" > $RES
+          echo "📍 عنوان النص في الذاكرة: 0x$ADDR" >> $RES
+          echo "---------------------------------------------------" >> $RES
           
-          # التحقق مما إذا كان الملف فارغاً، واستخدام طريقة بحث بديلة إذا لزم الأمر
-          if [ ! -s Sniper_Results/XREF_Result.txt ]; then
-             echo "لم يتم العثور على XREFs بالبحث المباشر، جاري البحث النمطي..." > Sniper_Results/XREF_Result.txt
-             r2 -q -c "/a 0x$ADDR" "$BINARY" >> Sniper_Results/XREF_Result.txt
+          # 1. البحث عن مؤشر معلومات النوع (TypeInfo)
+          echo "🔍 1. البحث عن مؤشر الـ TypeInfo..." >> $RES
+          r2 -q -c "/8 0x$ADDR" "$BINARY" > typeinfo.txt
+          
+          T_HIT=$(cat typeinfo.txt | grep -i "hit" | head -n 1 | awk '{print $1}')
+          
+          if [ ! -z "$T_HIT" ]; then
+             echo "✅ تم العثور على TypeInfo في: $T_HIT" >> $RES
+             T_CLEAN=$(echo $T_HIT | sed 's/0x//g')
+             
+             echo "🔍 2. البحث عن جدول الدوال (VTable) الذي يملك هذا الـ TypeInfo..." >> $RES
+             r2 -q -c "/8 0x$T_CLEAN" "$BINARY" > vtable.txt
+             
+             V_HIT=$(cat vtable.txt | grep -i "hit" | head -n 1 | awk '{print $1}')
+             
+             if [ ! -z "$V_HIT" ]; then
+                echo "✅ تم العثور على VTable (جدول الكلاس الحقيقي) في: $V_HIT" >> $RES
+                echo "🔥 استخراج دوال هذا الكلاس (هذه هي الـ Offsets الحقيقية!):" >> $RES
+                echo "---------------------------------------------------" >> $RES
+                
+                # طباعة 20 مؤشر من جدول الدوال (هذه هي العناوين التي سنعدل عليها)
+                r2 -q -c "pxq 160 @ $V_HIT" "$BINARY" >> $RES
+             else
+                echo "❌ لم يتم العثور على VTable." >> $RES
+             fi
+          else
+             echo "❌ لم يتم العثور على TypeInfo. (سنقوم ببحث بديل شامل)" >> $RES
+             r2 -q -c "aaa; axt 0x$ADDR" "$BINARY" >> $RES
           fi
           
-          cat Sniper_Results/XREF_Result.txt
+          cat $RES
+
 
       - name: 5. Upload Final XREFs
         uses: actions/upload-artifact@v4

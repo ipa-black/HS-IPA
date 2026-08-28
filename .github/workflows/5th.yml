@@ -22,9 +22,13 @@ jobs:
         run: |
           curl -L "${{ github.event.inputs.ipa_url }}" -o target.ipa
           unzip -q target.ipa -d extracted/
-          APP_DIR=$(ls -d extracted/Payload/*.app | head -n 1)
+          
+          # إصلاح مشكلة المسار المزدوج
+          APP_DIR=$(find extracted/Payload -name "*.app" -type d | head -n 1)
           BINARY_NAME=$(basename "$APP_DIR" .app)
-          echo "binary_path=extracted/Payload/$APP_DIR/$BINARY_NAME" >> $GITHUB_OUTPUT
+          BINARY_PATH="$APP_DIR/$BINARY_NAME"
+          
+          echo "binary_path=$BINARY_PATH" >> $GITHUB_OUTPUT
 
       - name: 2. Install Tools
         run: brew install radare2
@@ -34,7 +38,9 @@ jobs:
         run: |
           BINARY="${{ steps.locate.outputs.binary_path }}"
           TARGET="${{ github.event.inputs.target_string }}"
+          
           echo "البحث عن العنوان الفيزيائي للنص: $TARGET"
+          echo "داخل المسار: $BINARY"
           
           # استخراج عنوان النص بصيغة Hex
           STR_ADDR=$(rabin2 -z "$BINARY" | grep -i "$TARGET" | awk '{print $3}')
@@ -57,7 +63,7 @@ jobs:
           mkdir -p Sniper_Results
           echo "جاري تفكيك الكود التنفيذي والبحث عن الدوال التي تستدعي $ADDR (قد يستغرق دقيقة)..."
           
-          # تفكيك الكود والبحث عن العنوان مع جلب 10 أسطر قبله وبعده لمعرفة الدالة
+          # تفكيك الكود والبحث عن العنوان مع جلب 15 سطراً قبله وبعده لمعرفة الدالة
           otool -tV "$BINARY" | grep -B 15 -A 10 -i "$ADDR" > Sniper_Results/XREF_Result.txt || echo "لا توجد نتائج واضحة."
 
       - name: 5. Upload Final XREFs

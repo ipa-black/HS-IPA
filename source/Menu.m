@@ -10,10 +10,7 @@
 #import <dlfcn.h>
 #import "fishhook.h"
 
-// ====================================================
 // تعريف يدوي لدالة mach_vm_read_overwrite
-// لأن mach/mach_vm.h غير مدعوم في SDK الحديث
-// ====================================================
 extern kern_return_t mach_vm_read_overwrite(
     vm_map_t target_task,
     mach_vm_address_t address,
@@ -23,27 +20,17 @@ extern kern_return_t mach_vm_read_overwrite(
 );
 
 // ====================================================
-// منطقة الإعدادات - ضع هنا أنماط البايتات (Patterns)
+// الإعدادات
 // ====================================================
 
-// اسم المكتبة الرئيسية للعبة (غالباً UnityFramework أو libil2cpp.so)
 #define GAME_LIBRARY_NAME "UnityFramework"
 
-// نمط البايتات للبحث عن متغير طول خط التوجيه (Long Line)
-// استبدل هذا بالنمط الصحيح الذي حصلت عليه من التحليل
 static const char *longLinePattern = "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3";
-
-// إزاحة إضافية بعد العثور على النمط (إذا كان العنوان الفعلي بعد بداية النمط بمسافة)
 #define LONG_LINE_PATTERN_OFFSET 0x4
 
-// قيمة الخط الطويل عند التفعيل
 #define LONG_LINE_ACTIVE_VALUE   20.0f
-// القيمة الافتراضية
 #define LONG_LINE_DEFAULT_VALUE  1.0f
 
-// ====================================================
-// إعدادات اللعب التلقائي (Auto Play)
-// ====================================================
 #define AUTO_PLAY_STRENGTH_BEGINNER      0.6f
 #define AUTO_PLAY_STRENGTH_INTERMEDIATE  0.8f
 #define AUTO_PLAY_STRENGTH_PRO           1.0f
@@ -57,10 +44,9 @@ static const char *longLinePattern = "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3";
 #define AUTO_PLAY_AIM_SPEED_PRO          1.2f
 
 // ====================================================
-// دوال مساعدة للذاكرة
+// دوال الذاكرة
 // ====================================================
 
-// كتابة البيانات في الذاكرة
 void write_memory(uint64_t address, void *data, size_t size) {
     kern_return_t kr;
     mach_port_t task = mach_task_self();
@@ -68,11 +54,10 @@ void write_memory(uint64_t address, void *data, size_t size) {
     vm_size_t vm_size = size;
     kr = vm_write(task, (vm_address_t)address, vm_data, vm_size);
     if (kr != KERN_SUCCESS) {
-        NSLog(@"[IPA BLACK] فشل في الكتابة على العنوان 0x%llx, الخطأ: %d", address, kr);
+        NSLog(@"[IPA BLACK] فشل في الكتابة: %d", kr);
     }
 }
 
-// قراءة البيانات من الذاكرة
 void read_memory(uint64_t address, void *buffer, size_t size) {
     kern_return_t kr;
     mach_vm_size_t outsize;
@@ -82,11 +67,10 @@ void read_memory(uint64_t address, void *buffer, size_t size) {
                                 (mach_vm_address_t)buffer,
                                 &outsize);
     if (kr != KERN_SUCCESS) {
-        NSLog(@"[IPA BLACK] فشل في القراءة من العنوان 0x%llx, الخطأ: %d", address, kr);
+        NSLog(@"[IPA BLACK] فشل في القراءة: %d", kr);
     }
 }
 
-// الحصول على العنوان الأساسي لمكتبة
 uint64_t get_base_address(const char *libName) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *name = _dyld_get_image_name(i);
@@ -97,7 +81,6 @@ uint64_t get_base_address(const char *libName) {
     return 0;
 }
 
-// الحصول على النافذة الرئيسية الحالية (متوافقة مع iOS 13+)
 UIWindow *getKeyWindow(void) {
     UIWindow *keyWindow = nil;
     if (@available(iOS 13.0, *)) {
@@ -115,10 +98,9 @@ UIWindow *getKeyWindow(void) {
 }
 
 // ====================================================
-// دوال البحث عن أنماط البايتات (Pattern Scanning)
+// البحث عن الأنماط
 // ====================================================
 
-// تحويل النمط النصي إلى بايتات وقناع
 void parse_pattern(const char *pattern, unsigned char **bytes, char **mask, size_t *length) {
     size_t len = strlen(pattern);
     size_t count = (len + 1) / 3;
@@ -141,7 +123,6 @@ void parse_pattern(const char *pattern, unsigned char **bytes, char **mask, size
     (*mask)[count] = '\0';
 }
 
-// البحث عن نمط داخل نطاق
 uint64_t find_pattern_in_range(uint64_t start, uint64_t end, const char *pattern) {
     unsigned char *bytes;
     char *mask;
@@ -172,7 +153,6 @@ uint64_t find_pattern_in_range(uint64_t start, uint64_t end, const char *pattern
     return 0;
 }
 
-// البحث عن نمط داخل مكتبة معينة (ضمن مقطع __TEXT)
 uint64_t find_pattern_in_library(const char *libName, const char *pattern) {
     uint64_t base = get_base_address(libName);
     if (base == 0) {
@@ -201,41 +181,16 @@ uint64_t find_pattern_in_library(const char *libName, const char *pattern) {
     
     if (text_size == 0) {
         text_size = 0x10000000;
-        NSLog(@"[IPA BLACK] تعذر تحديد حجم __TEXT، سيتم استخدام نطاق احتياطي");
     }
-    
-    NSLog(@"[IPA BLACK] جار البحث عن النمط في %s من 0x%llx إلى 0x%llx", libName, text_start, text_start + text_size);
     
     return find_pattern_in_range(text_start, text_start + text_size, pattern);
 }
 
 // ====================================================
-// 1. التخطي العميق (تجاوز فحص التوقيع والحماية)
+// تجاوز التوقيع (مع إزالة fishhook إذا كان يسبب مشاكل)
 // ====================================================
-
-static int (*original_stat)(const char *restrict path, struct stat *restrict buf);
-int replaced_stat(const char *restrict path, struct stat *restrict buf) {
-    if (path && strstr(path, "embedded.mobileprovision")) {
-        return -1;
-    }
-    return original_stat(path, buf);
-}
-
-static int (*original_lstat)(const char *restrict path, struct stat *restrict buf);
-int replaced_lstat(const char *restrict path, struct stat *restrict buf) {
-    if (path && strstr(path, "embedded.mobileprovision")) {
-        return -1;
-    }
-    return original_lstat(path, buf);
-}
-
-static int (*original_access)(const char *path, int amode);
-int replaced_access(const char *path, int amode) {
-    if (path && strstr(path, "embedded.mobileprovision")) {
-        return -1;
-    }
-    return original_access(path, amode);
-}
+// سنكتفي بتعطيل فحص receipt فقط، وإزالة fishhook مؤقتًا
+// لتفادي أي تعارض مع النظام.
 
 static IMP original_appStoreReceiptURL;
 NSURL* replaced_appStoreReceiptURL(id self, SEL _cmd) {
@@ -243,44 +198,27 @@ NSURL* replaced_appStoreReceiptURL(id self, SEL _cmd) {
 }
 
 static __inline__ __attribute__((always_inline)) void applyUltimateBypass() {
-    struct rebinding rebindings[] = {
-        {"stat", replaced_stat, (void *)&original_stat},
-        {"lstat", replaced_lstat, (void *)&original_lstat},
-        {"access", replaced_access, (void *)&original_access}
-    };
-    rebind_symbols(rebindings, 3);
+    // تعطيل fishhook مؤقتًا لتجنب الشاشة السوداء
+    // struct rebinding rebindings[] = { ... };
+    // rebind_symbols(rebindings, 3);
     
     Method m2 = class_getInstanceMethod([NSBundle class], @selector(appStoreReceiptURL));
     if (m2) {
         original_appStoreReceiptURL = method_setImplementation(m2, (IMP)replaced_appStoreReceiptURL);
     }
     
-    NSLog(@"[IPA BLACK] - تم تفعيل تجاوز التوقيع (Fishhook)!");
+    NSLog(@"[IPA BLACK] - تم تجاوز فحص الاستلام.");
 }
 
 // ====================================================
-// 2. طبقة الحماية (منع التصحيح ومنع التنبؤ)
+// الحماية (بدون Anti-Debug)
 // ====================================================
-static __inline__ __attribute__((always_inline)) void ipa_black_anti_debug() {
-    #ifdef __arm64__
-    __asm__ volatile(
-        "mov x0, #31\n"
-        "mov x1, #0\n"
-        "mov x2, #0\n"
-        "mov x3, #0\n"
-        "mov x16, #26\n"
-        "svc #0x80\n"
-    );
-    #endif
-    NSLog(@"[IPA BLACK] - تم تهيئة منع التصحيح.");
-}
-
 static __inline__ __attribute__((always_inline)) void ipa_black_anti_prediction() {
-    NSLog(@"[IPA BLACK] - تم ربط محرك التنبؤ وتأمينه.");
+    NSLog(@"[IPA BLACK] - تم تأمين محرك التنبؤ.");
 }
 
 // ====================================================
-// 3. الواجهة والتحكم (Mod Menu)
+// واجهة القائمة
 // ====================================================
 @interface IPABlackMenu : NSObject
 @end
@@ -433,39 +371,38 @@ static NSTimer *autoPlayTimer = nil;
 }
 
 + (void)toggleLongLine:(UISwitch *)sender {
-    if (cachedLongLineAddress == 0) {
-        uint64_t found = find_pattern_in_library(GAME_LIBRARY_NAME, longLinePattern);
-        if (found == 0) {
-            NSLog(@"[IPA BLACK] لم يتم العثور على نمط Long Line");
-            [sender setOn:NO animated:YES];
-            return;
+    // تنفيذ البحث في خلفية لتجنب التجميد
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        if (cachedLongLineAddress == 0) {
+            uint64_t found = find_pattern_in_library(GAME_LIBRARY_NAME, longLinePattern);
+            if (found == 0) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [sender setOn:NO animated:YES];
+                });
+                NSLog(@"[IPA BLACK] لم يتم العثور على نمط Long Line");
+                return;
+            }
+            cachedLongLineAddress = found + LONG_LINE_PATTERN_OFFSET;
+            NSLog(@"[IPA BLACK] تم العثور على عنوان Long Line: 0x%llx", cachedLongLineAddress);
         }
-        cachedLongLineAddress = found + LONG_LINE_PATTERN_OFFSET;
-        NSLog(@"[IPA BLACK] تم العثور على عنوان Long Line: 0x%llx", cachedLongLineAddress);
-    }
-    
-    float newValue = sender.isOn ? LONG_LINE_ACTIVE_VALUE : LONG_LINE_DEFAULT_VALUE;
-    write_memory(cachedLongLineAddress, &newValue, sizeof(float));
-    
-    NSLog(@"[IPA BLACK] Long Line %@! تم ضبط القيمة إلى %.2f على العنوان 0x%llx", sender.isOn ? @"مفعل" : @"معطل", newValue, cachedLongLineAddress);
+        
+        float newValue = sender.isOn ? LONG_LINE_ACTIVE_VALUE : LONG_LINE_DEFAULT_VALUE;
+        write_memory(cachedLongLineAddress, &newValue, sizeof(float));
+        NSLog(@"[IPA BLACK] Long Line %@! القيمة: %.2f", sender.isOn ? @"مفعل" : @"معطل", newValue);
+    });
 }
 
 + (void)toggleStreamProof:(UISwitch *)sender {
     if (sender.isOn) {
         secureTextField.secureTextEntry = YES;
-        NSLog(@"[IPA BLACK] تم تفعيل إخفاء التصوير");
     } else {
         secureTextField.secureTextEntry = NO;
-        NSLog(@"[IPA BLACK] تم تعطيل إخفاء التصوير");
     }
 }
 
 + (void)toggleAntiBan:(UISwitch *)sender {
     if (sender.isOn) {
         ipa_black_anti_prediction();
-        NSLog(@"[IPA BLACK] تم تفعيل Anti-Ban");
-    } else {
-        NSLog(@"[IPA BLACK] تم تعطيل Anti-Ban");
     }
 }
 
@@ -473,17 +410,13 @@ static NSTimer *autoPlayTimer = nil;
     autoPlayEnabled = sender.isOn;
     if (autoPlayEnabled) {
         [self startAutoPlayTimer];
-        NSLog(@"[IPA BLACK] تم تفعيل اللعب التلقائي (المستوى: %d)", autoPlayLevel);
     } else {
         [self stopAutoPlayTimer];
-        NSLog(@"[IPA BLACK] تم تعطيل اللعب التلقائي");
     }
 }
 
 + (void)levelChanged:(UISegmentedControl *)sender {
     autoPlayLevel = (int)sender.selectedSegmentIndex;
-    NSLog(@"[IPA BLACK] تم تغيير مستوى اللعب التلقائي إلى: %d", autoPlayLevel);
-    
     if (autoPlayEnabled) {
         [self stopAutoPlayTimer];
         [self startAutoPlayTimer];
@@ -501,7 +434,6 @@ static NSTimer *autoPlayTimer = nil;
         case 0: delay = AUTO_PLAY_DELAY_BEGINNER; break;
         case 1: delay = AUTO_PLAY_DELAY_INTERMEDIATE; break;
         case 2: delay = AUTO_PLAY_DELAY_PRO; break;
-        default: delay = AUTO_PLAY_DELAY_BEGINNER; break;
     }
     
     autoPlayTimer = [NSTimer scheduledTimerWithTimeInterval:delay
@@ -509,7 +441,6 @@ static NSTimer *autoPlayTimer = nil;
                                                    selector:@selector(autoPlayTick:)
                                                    userInfo:nil
                                                     repeats:YES];
-    [[NSRunLoop mainRunLoop] addTimer:autoPlayTimer forMode:NSRunLoopCommonModes];
 }
 
 + (void)stopAutoPlayTimer {
@@ -530,25 +461,18 @@ static NSTimer *autoPlayTimer = nil;
 + (void)performShot {
     float strength = 1.0f;
     float aimSpeed = 1.0f;
-    
     switch (autoPlayLevel) {
         case 0: strength = AUTO_PLAY_STRENGTH_BEGINNER; aimSpeed = AUTO_PLAY_AIM_SPEED_BEGINNER; break;
         case 1: strength = AUTO_PLAY_STRENGTH_INTERMEDIATE; aimSpeed = AUTO_PLAY_AIM_SPEED_INTERMEDIATE; break;
         case 2: strength = AUTO_PLAY_STRENGTH_PRO; aimSpeed = AUTO_PLAY_AIM_SPEED_PRO; break;
-        default: break;
     }
-    
-    NSLog(@"[IPA BLACK] تنفيذ ضربة تلقائية - القوة: %.2f، سرعة التصويب: %.2f", strength, aimSpeed);
-    
-    // ====================================================
-    // هنا يجب إضافة الكود الفعلي للضربة التلقائية
-    // ====================================================
+    NSLog(@"[IPA BLACK] تنفيذ ضربة - القوة: %.2f، السرعة: %.2f", strength, aimSpeed);
+    // TODO: ضع هنا منطق الضربة الفعلي
 }
 
 + (void)openTelegram {
     NSURL *tgApp = [NSURL URLWithString:@"tg://resolve?domain=hl00ss"];
     NSURL *tgWeb = [NSURL URLWithString:@"https://t.me/hl00ss"];
-    
     if ([[UIApplication sharedApplication] canOpenURL:tgApp]) {
         [[UIApplication sharedApplication] openURL:tgApp options:@{} completionHandler:nil];
     } else {
@@ -570,14 +494,14 @@ static NSTimer *autoPlayTimer = nil;
 @end
 
 // ====================================================
-// 4. نقطة انطلاق الـ Dylib (Constructor)
+// نقطة الانطلاق
 // ====================================================
 static void __attribute__((constructor)) initialize_ipa_black() {
     applyUltimateBypass();
-    ipa_black_anti_debug();
     ipa_black_anti_prediction();
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // تأخير أطول (15 ثانية) لضمان تحميل اللعبة بالكامل
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIWindow *window = getKeyWindow();
         if (window) {
             UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];

@@ -6,10 +6,21 @@
 #import <unistd.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <mach/mach.h>
-#import <mach/mach_vm.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import "fishhook.h"
+
+// ====================================================
+// تعريف يدوي لدالة mach_vm_read_overwrite
+// لأن mach/mach_vm.h غير مدعوم في SDK الحديث
+// ====================================================
+extern kern_return_t mach_vm_read_overwrite(
+    vm_map_t target_task,
+    mach_vm_address_t address,
+    mach_vm_size_t size,
+    mach_vm_address_t data,
+    mach_vm_size_t *outsize
+);
 
 // ====================================================
 // منطقة الإعدادات - ضع هنا أنماط البايتات (Patterns)
@@ -46,19 +57,8 @@ static const char *longLinePattern = "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3";
 #define AUTO_PLAY_AIM_SPEED_PRO          1.2f
 
 // ====================================================
-// دوال مساعدة للذاكرة (64-bit)
+// دوال مساعدة للذاكرة
 // ====================================================
-
-// تعريف يدوي احتياطي إذا لم يتوفر في الرؤوس
-#ifndef mach_vm_read_overwrite
-extern kern_return_t mach_vm_read_overwrite(
-    vm_map_t target_task,
-    mach_vm_address_t address,
-    mach_vm_size_t size,
-    mach_vm_address_t data,
-    mach_vm_size_t *outsize
-);
-#endif
 
 // كتابة البيانات في الذاكرة
 void write_memory(uint64_t address, void *data, size_t size) {
@@ -292,7 +292,7 @@ static UITextField *secureTextField = nil;
 static uint64_t cachedLongLineAddress = 0;
 
 static BOOL autoPlayEnabled = NO;
-static int autoPlayLevel = 0; // 0 = مبتدئ، 1 = متوسط، 2 = محترف
+static int autoPlayLevel = 0;
 static NSTimer *autoPlayTimer = nil;
 
 + (void)showMenu {
@@ -432,9 +432,6 @@ static NSTimer *autoPlayTimer = nil;
     [view addSubview:toggle];
 }
 
-// -------------------------------
-// تفعيل السهم الطويل (Long Line)
-// -------------------------------
 + (void)toggleLongLine:(UISwitch *)sender {
     if (cachedLongLineAddress == 0) {
         uint64_t found = find_pattern_in_library(GAME_LIBRARY_NAME, longLinePattern);
@@ -472,9 +469,6 @@ static NSTimer *autoPlayTimer = nil;
     }
 }
 
-// -------------------------------
-// اللعب التلقائي (Auto Play)
-// -------------------------------
 + (void)toggleAutoPlay:(UISwitch *)sender {
     autoPlayEnabled = sender.isOn;
     if (autoPlayEnabled) {
@@ -504,18 +498,10 @@ static NSTimer *autoPlayTimer = nil;
     
     float delay = 1.0f;
     switch (autoPlayLevel) {
-        case 0:
-            delay = AUTO_PLAY_DELAY_BEGINNER;
-            break;
-        case 1:
-            delay = AUTO_PLAY_DELAY_INTERMEDIATE;
-            break;
-        case 2:
-            delay = AUTO_PLAY_DELAY_PRO;
-            break;
-        default:
-            delay = AUTO_PLAY_DELAY_BEGINNER;
-            break;
+        case 0: delay = AUTO_PLAY_DELAY_BEGINNER; break;
+        case 1: delay = AUTO_PLAY_DELAY_INTERMEDIATE; break;
+        case 2: delay = AUTO_PLAY_DELAY_PRO; break;
+        default: delay = AUTO_PLAY_DELAY_BEGINNER; break;
     }
     
     autoPlayTimer = [NSTimer scheduledTimerWithTimeInterval:delay
@@ -546,34 +532,17 @@ static NSTimer *autoPlayTimer = nil;
     float aimSpeed = 1.0f;
     
     switch (autoPlayLevel) {
-        case 0:
-            strength = AUTO_PLAY_STRENGTH_BEGINNER;
-            aimSpeed = AUTO_PLAY_AIM_SPEED_BEGINNER;
-            break;
-        case 1:
-            strength = AUTO_PLAY_STRENGTH_INTERMEDIATE;
-            aimSpeed = AUTO_PLAY_AIM_SPEED_INTERMEDIATE;
-            break;
-        case 2:
-            strength = AUTO_PLAY_STRENGTH_PRO;
-            aimSpeed = AUTO_PLAY_AIM_SPEED_PRO;
-            break;
-        default:
-            break;
+        case 0: strength = AUTO_PLAY_STRENGTH_BEGINNER; aimSpeed = AUTO_PLAY_AIM_SPEED_BEGINNER; break;
+        case 1: strength = AUTO_PLAY_STRENGTH_INTERMEDIATE; aimSpeed = AUTO_PLAY_AIM_SPEED_INTERMEDIATE; break;
+        case 2: strength = AUTO_PLAY_STRENGTH_PRO; aimSpeed = AUTO_PLAY_AIM_SPEED_PRO; break;
+        default: break;
     }
     
     NSLog(@"[IPA BLACK] تنفيذ ضربة تلقائية - القوة: %.2f، سرعة التصويب: %.2f", strength, aimSpeed);
     
     // ====================================================
     // هنا يجب إضافة الكود الفعلي للضربة التلقائية
-    // يمكن أن يتضمن:
-    // 1. استدعاء دالة داخلية في اللعبة (مثل دالة Shot)
-    // 2. محاكاة لمسة على الشاشة (سحب الإصبع)
-    // 3. ضبط زاوية وقوة الضربة عبر تعديل متغيرات الذاكرة
     // ====================================================
-    // مثال وهمي:
-    // call_game_shot_function(strength, aimSpeed);
-    // simulate_touch_swipe(startX, startY, endX, endY);
 }
 
 + (void)openTelegram {

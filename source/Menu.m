@@ -1,74 +1,22 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <sys/sysctl.h>
 #import <sys/stat.h>
 #import <unistd.h>
-#import <CoreGraphics/CoreGraphics.h>
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
-#import "fishhook.h"
-
-// تعريف يدوي لدالة mach_vm_read_overwrite
-extern kern_return_t mach_vm_read_overwrite(
-    vm_map_t target_task,
-    mach_vm_address_t address,
-    mach_vm_size_t size,
-    mach_vm_address_t data,
-    mach_vm_size_t *outsize
-);
 
 // ====================================================
-// الإعدادات
+// دوال الذاكرة (النظام فقط)
 // ====================================================
-
-#define GAME_LIBRARY_NAME "UnityFramework"
-
-static const char *longLinePattern = "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3";
-#define LONG_LINE_PATTERN_OFFSET 0x4
-
-#define LONG_LINE_ACTIVE_VALUE   20.0f
-#define LONG_LINE_DEFAULT_VALUE  1.0f
-
-#define AUTO_PLAY_STRENGTH_BEGINNER      0.6f
-#define AUTO_PLAY_STRENGTH_INTERMEDIATE  0.8f
-#define AUTO_PLAY_STRENGTH_PRO           1.0f
-
-#define AUTO_PLAY_DELAY_BEGINNER         3.0f
-#define AUTO_PLAY_DELAY_INTERMEDIATE     2.0f
-#define AUTO_PLAY_DELAY_PRO              1.0f
-
-#define AUTO_PLAY_AIM_SPEED_BEGINNER     0.5f
-#define AUTO_PLAY_AIM_SPEED_INTERMEDIATE 0.8f
-#define AUTO_PLAY_AIM_SPEED_PRO          1.2f
-
-// ====================================================
-// دوال الذاكرة
-// ====================================================
-
 void write_memory(uint64_t address, void *data, size_t size) {
-    kern_return_t kr;
-    mach_port_t task = mach_task_self();
-    vm_offset_t vm_data = (vm_offset_t)data;
-    vm_size_t vm_size = size;
-    kr = vm_write(task, (vm_address_t)address, vm_data, vm_size);
-    if (kr != KERN_SUCCESS) {
-        NSLog(@"[IPA BLACK] فشل في الكتابة: %d", kr);
-    }
+    vm_write(mach_task_self(), (vm_address_t)address, (vm_offset_t)data, (vm_size_t)size);
 }
 
 void read_memory(uint64_t address, void *buffer, size_t size) {
-    kern_return_t kr;
-    mach_vm_size_t outsize;
-    kr = mach_vm_read_overwrite(mach_task_self(),
-                                (mach_vm_address_t)address,
-                                (mach_vm_size_t)size,
-                                (mach_vm_address_t)buffer,
-                                &outsize);
-    if (kr != KERN_SUCCESS) {
-        NSLog(@"[IPA BLACK] فشل في القراءة: %d", kr);
-    }
+    size_t outsize;
+    vm_read_overwrite(mach_task_self(), (vm_address_t)address, (vm_size_t)size, (vm_address_t)buffer, &outsize);
 }
 
 uint64_t get_base_address(const char *libName) {
@@ -81,6 +29,9 @@ uint64_t get_base_address(const char *libName) {
     return 0;
 }
 
+// ====================================================
+// الحصول على النافذة الرئيسية
+// ====================================================
 UIWindow *getKeyWindow(void) {
     UIWindow *keyWindow = nil;
     if (@available(iOS 13.0, *)) {
@@ -98,124 +49,113 @@ UIWindow *getKeyWindow(void) {
 }
 
 // ====================================================
-// البحث عن الأنماط
+// البحث عن الأنماط (يستخدم vm_read_overwrite)
 // ====================================================
-
-void parse_pattern(const char *pattern, unsigned char **bytes, char **mask, size_t *length) {
-    size_t len = strlen(pattern);
-    size_t count = (len + 1) / 3;
-    *bytes = (unsigned char *)malloc(count);
-    *mask = (char *)malloc(count + 1);
-    *length = count;
+uint64_t find_pattern_in_library(const char *libName, const char *pattern) {
+    uint64_t base = get_base_address(libName);
+    if (base == 0) return 0;
     
-    for (size_t i = 0; i < count; i++) {
-        const char *cur = pattern + i * 3;
-        if (cur[0] == '?' && cur[1] == '?') {
-            (*bytes)[i] = 0x00;
-            (*mask)[i] = '?';
+    unsigned char bytes[64];
+    char mask[64];
+    size_t length = 0;
+    
+    const char *p = pattern;
+    while (*p) {
+        if (p[0] == '?' && p[1] == '?') {
+            bytes[length] = 0x00;
+            mask[length] = '?';
+            p += 2;
         } else {
             unsigned int val;
-            sscanf(cur, "%02X", &val);
-            (*bytes)[i] = (unsigned char)val;
-            (*mask)[i] = 'x';
+            sscanf(p, "%02X", &val);
+            bytes[length] = (unsigned char)val;
+            mask[length] = 'x';
+            p += 2;
         }
+        length++;
+        if (*p == ' ') p++;
     }
-    (*mask)[count] = '\0';
-}
-
-uint64_t find_pattern_in_range(uint64_t start, uint64_t end, const char *pattern) {
-    unsigned char *bytes;
-    char *mask;
-    size_t length;
-    parse_pattern(pattern, &bytes, &mask, &length);
     
-    for (uint64_t addr = start; addr < end - length; addr++) {
+    uint64_t searchSize = 0x8000000; // 128 ميجابايت
+    for (uint64_t addr = base; addr < base + searchSize - length; addr++) {
         bool found = true;
         for (size_t i = 0; i < length; i++) {
             if (mask[i] == 'x') {
                 unsigned char current;
-                read_memory(addr + i, &current, 1);
+                size_t outsize;
+                vm_read_overwrite(mach_task_self(), (vm_address_t)(addr + i), 1, (vm_address_t)&current, &outsize);
                 if (current != bytes[i]) {
                     found = false;
                     break;
                 }
             }
         }
-        if (found) {
-            free(bytes);
-            free(mask);
-            return addr;
-        }
+        if (found) return addr;
     }
-    
-    free(bytes);
-    free(mask);
     return 0;
 }
 
-uint64_t find_pattern_in_library(const char *libName, const char *pattern) {
-    uint64_t base = get_base_address(libName);
-    if (base == 0) {
-        NSLog(@"[IPA BLACK] المكتبة %s غير موجودة", libName);
-        return 0;
-    }
+// ====================================================
+// واجهة الرسم (OverlayView)
+// ====================================================
+@interface OverlayView : UIView
+@property (nonatomic, strong) NSArray *pocketPositions;   // مصفوفة CGPoint
+@property (nonatomic, assign) CGFloat pocketRadius;        // نصف قطر الجيب
+@property (nonatomic, assign) BOOL showPockets;            // إظهار الجيوب فقط
+@property (nonatomic, assign) BOOL showGuideLines;         // إظهار خطوط التوجيه
+@property (nonatomic, assign) CGPoint cueBallPosition;     // موقع الكرة البيضاء
+@property (nonatomic, assign) float aimAngle;              // زاوية التصويب (بالراديان)
+@end
+
+@implementation OverlayView
+
+- (void)drawRect:(CGRect)rect {
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSetLineWidth(ctx, 2.5);
     
-    uint64_t text_start = base;
-    uint64_t text_size = 0;
-    
-    struct mach_header_64 *header = (struct mach_header_64 *)base;
-    if (header->magic == MH_MAGIC_64) {
-        struct load_command *cmd = (struct load_command *)(base + sizeof(struct mach_header_64));
-        for (uint32_t i = 0; i < header->ncmds; i++) {
-            if (cmd->cmd == LC_SEGMENT_64) {
-                struct segment_command_64 *seg = (struct segment_command_64 *)cmd;
-                if (strcmp(seg->segname, "__TEXT") == 0) {
-                    text_start = base + seg->vmaddr;
-                    text_size = seg->vmsize;
-                    break;
-                }
-            }
-            cmd = (struct load_command *)((uint8_t *)cmd + cmd->cmdsize);
+    // رسم الجيوب
+    if (self.showPockets && self.pocketPositions) {
+        for (NSValue *val in self.pocketPositions) {
+            CGPoint p = [val CGPointValue];
+            CGRect circle = CGRectMake(p.x - self.pocketRadius, p.y - self.pocketRadius,
+                                       self.pocketRadius * 2, self.pocketRadius * 2);
+            CGContextSetFillColorWithColor(ctx, [UIColor colorWithRed:0.0 green:0.8 blue:0.9 alpha:0.7].CGColor);
+            CGContextFillEllipseInRect(ctx, circle);
+            CGContextSetStrokeColorWithColor(ctx, [UIColor cyanColor].CGColor);
+            CGContextStrokeEllipseInRect(ctx, circle);
         }
     }
     
-    if (text_size == 0) {
-        text_size = 0x10000000;
+    // رسم خطوط التوجيه من الكرة البيضاء إلى الجيوب
+    if (self.showGuideLines && self.pocketPositions) {
+        for (NSValue *val in self.pocketPositions) {
+            CGPoint pocket = [val CGPointValue];
+            
+            float dx = pocket.x - self.cueBallPosition.x;
+            float dy = pocket.y - self.cueBallPosition.y;
+            float angleToPocket = atan2f(dy, dx);
+            
+            float diff = fabsf(angleToPocket - self.aimAngle);
+            if (diff > M_PI) diff = 2 * M_PI - diff;
+            
+            UIColor *lineColor;
+            if (diff < 0.15) {
+                lineColor = [UIColor redColor];        // الكرة البيضاء قد تدخل
+            } else if (diff < 0.4) {
+                lineColor = [UIColor yellowColor];     // قريب
+            } else {
+                lineColor = [UIColor cyanColor];       // بعيد
+            }
+            
+            CGContextSetStrokeColorWithColor(ctx, lineColor.CGColor);
+            CGContextMoveToPoint(ctx, self.cueBallPosition.x, self.cueBallPosition.y);
+            CGContextAddLineToPoint(ctx, pocket.x, pocket.y);
+            CGContextStrokePath(ctx);
+        }
     }
-    
-    return find_pattern_in_range(text_start, text_start + text_size, pattern);
 }
 
-// ====================================================
-// تجاوز التوقيع (مع إزالة fishhook إذا كان يسبب مشاكل)
-// ====================================================
-// سنكتفي بتعطيل فحص receipt فقط، وإزالة fishhook مؤقتًا
-// لتفادي أي تعارض مع النظام.
-
-static IMP original_appStoreReceiptURL;
-NSURL* replaced_appStoreReceiptURL(id self, SEL _cmd) {
-    return [NSURL fileURLWithPath:[[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"_MASReceipt/receipt"]];
-}
-
-static __inline__ __attribute__((always_inline)) void applyUltimateBypass() {
-    // تعطيل fishhook مؤقتًا لتجنب الشاشة السوداء
-    // struct rebinding rebindings[] = { ... };
-    // rebind_symbols(rebindings, 3);
-    
-    Method m2 = class_getInstanceMethod([NSBundle class], @selector(appStoreReceiptURL));
-    if (m2) {
-        original_appStoreReceiptURL = method_setImplementation(m2, (IMP)replaced_appStoreReceiptURL);
-    }
-    
-    NSLog(@"[IPA BLACK] - تم تجاوز فحص الاستلام.");
-}
-
-// ====================================================
-// الحماية (بدون Anti-Debug)
-// ====================================================
-static __inline__ __attribute__((always_inline)) void ipa_black_anti_prediction() {
-    NSLog(@"[IPA BLACK] - تم تأمين محرك التنبؤ.");
-}
+@end
 
 // ====================================================
 // واجهة القائمة
@@ -226,123 +166,81 @@ static __inline__ __attribute__((always_inline)) void ipa_black_anti_prediction(
 @implementation IPABlackMenu
 
 static UIView *menuContainer = nil;
-static UITextField *secureTextField = nil;
+static OverlayView *overlayView = nil;
 static uint64_t cachedLongLineAddress = 0;
 
-static BOOL autoPlayEnabled = NO;
-static int autoPlayLevel = 0;
-static NSTimer *autoPlayTimer = nil;
+// الإعدادات
+static BOOL pocketsOverlayEnabled = NO;
+static BOOL guideLinesEnabled = NO;
+static CGFloat pocketRadius = 15.0;
+
+// بيانات الكرة البيضاء (افتراضياً - يجب ربطها بالذاكرة لاحقاً)
+static CGPoint cueBallPosition = {200, 400};
+static float aimAngleValue = 0.0;
 
 + (void)showMenu {
     if (menuContainer) return;
     
     UIWindow *window = getKeyWindow();
-    if (!window) {
-        NSLog(@"[IPA BLACK] لا توجد نافذة رئيسية");
-        return;
-    }
+    if (!window) return;
     
-    secureTextField = [[UITextField alloc] init];
-    secureTextField.secureTextEntry = YES;
-    secureTextField.userInteractionEnabled = YES;
-    
-    UIView *secureView = secureTextField.subviews.firstObject;
-    secureView.userInteractionEnabled = YES;
-    
-    menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 340, 500)];
+    menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 340, 400)];
     menuContainer.center = window.center;
+    menuContainer.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.95];
+    menuContainer.layer.cornerRadius = 15;
+    menuContainer.clipsToBounds = YES;
+    menuContainer.layer.borderWidth = 1.5;
+    menuContainer.layer.borderColor = [UIColor cyanColor].CGColor;
     
-    UIVisualEffectView *blurMenu = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
-    blurMenu.frame = menuContainer.bounds;
-    blurMenu.layer.cornerRadius = 20;
-    blurMenu.clipsToBounds = YES;
-    blurMenu.layer.borderWidth = 1.5;
-    blurMenu.layer.borderColor = [UIColor cyanColor].CGColor;
-    [menuContainer addSubview:blurMenu];
-    
-    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 15, 340, 50)];
-    
-    UIImageView *logoView = [[UIImageView alloc] initWithFrame:CGRectMake(55, 5, 40, 40)];
-    logoView.layer.cornerRadius = 20;
-    logoView.clipsToBounds = YES;
-    logoView.layer.borderWidth = 1.5;
-    logoView.layer.borderColor = [UIColor cyanColor].CGColor;
-    logoView.contentMode = UIViewContentModeScaleAspectFill;
-    
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/08/178785429458971.jpeg"]];
-        if (imgData) {
-            UIImage *img = [UIImage imageWithData:imgData];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                logoView.image = img;
-            });
-        }
-    });
-    [headerView addSubview:logoView];
-    
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(105, 10, 180, 30)];
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, 340, 30)];
     title.text = @"IPA Black";
     title.textColor = [UIColor whiteColor];
-    title.font = [UIFont fontWithName:@"HelveticaNeue-Bold" size:22];
-    [headerView addSubview:title];
+    title.textAlignment = NSTextAlignmentCenter;
+    title.font = [UIFont boldSystemFontOfSize:20];
+    [menuContainer addSubview:title];
     
-    [menuContainer addSubview:headerView];
-    
-    UILabel *subTitle = [[UILabel alloc] initWithFrame:CGRectMake(0, 65, 340, 20)];
+    UILabel *subTitle = [[UILabel alloc] initWithFrame:CGRectMake(0, 55, 340, 20)];
     subTitle.text = @"8 Ball Pool - VIP Hack";
     subTitle.textColor = [UIColor cyanColor];
     subTitle.textAlignment = NSTextAlignmentCenter;
-    subTitle.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    subTitle.font = [UIFont systemFontOfSize:13];
     [menuContainer addSubview:subTitle];
     
     int startY = 100;
     
-    [self addSwitchToView:menuContainer yPos:startY title:@"السهم الطويل (Long Line)" action:@selector(toggleLongLine:)];
-    [self addSwitchToView:menuContainer yPos:startY+45 title:@"إخفاء من التصوير (Stream Proof)" action:@selector(toggleStreamProof:) isOn:YES];
-    [self addSwitchToView:menuContainer yPos:startY+90 title:@"تخطي الحماية (Anti-Ban)" action:@selector(toggleAntiBan:) isOn:YES];
+    // السهم الطويل
+    [self addSwitchToView:menuContainer yPos:startY title:@"السهم الطويل" action:@selector(toggleLongLineAction:)];
     
-    UILabel *autoPlayLabel = [[UILabel alloc] initWithFrame:CGRectMake(25, startY+140, 290, 30)];
-    autoPlayLabel.text = @"اللعب التلقائي (Auto Play)";
-    autoPlayLabel.textColor = [UIColor cyanColor];
-    autoPlayLabel.font = [UIFont boldSystemFontOfSize:16];
-    [menuContainer addSubview:autoPlayLabel];
+    // تحديد الجيوب
+    [self addSwitchToView:menuContainer yPos:startY+45 title:@"تحديد الجيوب" action:@selector(togglePocketsOverlay:)];
     
-    UISwitch *autoPlaySwitch = [[UISwitch alloc] initWithFrame:CGRectMake(265, startY+140, 50, 30)];
-    autoPlaySwitch.onTintColor = [UIColor cyanColor];
-    [autoPlaySwitch addTarget:self action:@selector(toggleAutoPlay:) forControlEvents:UIControlEventValueChanged];
-    [autoPlaySwitch setOn:NO];
-    [menuContainer addSubview:autoPlaySwitch];
+    // خطوط التوجيه الذكية
+    [self addSwitchToView:menuContainer yPos:startY+90 title:@"خطوط التوجيه الذكية" action:@selector(toggleGuideLines:)];
     
-    NSArray *levelItems = @[@"مبتدئ", @"متوسط", @"محترف"];
-    UISegmentedControl *levelSegment = [[UISegmentedControl alloc] initWithItems:levelItems];
-    levelSegment.frame = CGRectMake(25, startY+180, 290, 35);
-    levelSegment.selectedSegmentIndex = autoPlayLevel;
-    levelSegment.tintColor = [UIColor cyanColor];
-    [levelSegment addTarget:self action:@selector(levelChanged:) forControlEvents:UIControlEventValueChanged];
-    [menuContainer addSubview:levelSegment];
+    // أزرار تكبير/تصغير الجيوب
+    UIButton *increaseBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    increaseBtn.frame = CGRectMake(25, startY+140, 130, 35);
+    [increaseBtn setTitle:@"جيب أكبر +" forState:UIControlStateNormal];
+    [increaseBtn addTarget:self action:@selector(increasePocketSize) forControlEvents:UIControlEventTouchUpInside];
+    [menuContainer addSubview:increaseBtn];
     
-    UIButton *tgButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    tgButton.frame = CGRectMake(40, startY+230, 260, 45);
-    [tgButton setTitle:@"انضم للتليجرام: hl00ss" forState:UIControlStateNormal];
-    tgButton.backgroundColor = [UIColor colorWithRed:0.17 green:0.65 blue:0.91 alpha:1.0];
-    [tgButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    tgButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    tgButton.layer.cornerRadius = 12;
-    [tgButton addTarget:self action:@selector(openTelegram) forControlEvents:UIControlEventTouchUpInside];
-    [menuContainer addSubview:tgButton];
+    UIButton *decreaseBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    decreaseBtn.frame = CGRectMake(170, startY+140, 130, 35);
+    [decreaseBtn setTitle:@"جيب أصغر -" forState:UIControlStateNormal];
+    [decreaseBtn addTarget:self action:@selector(decreasePocketSize) forControlEvents:UIControlEventTouchUpInside];
+    [menuContainer addSubview:decreaseBtn];
     
+    // زر الإغلاق
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    closeBtn.frame = CGRectMake(40, startY+285, 260, 45);
-    [closeBtn setTitle:@"إغلاق القائمة (Close Menu)" forState:UIControlStateNormal];
-    closeBtn.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:1.0];
+    closeBtn.frame = CGRectMake(60, startY+200, 200, 45);
+    [closeBtn setTitle:@"إغلاق" forState:UIControlStateNormal];
+    closeBtn.backgroundColor = [UIColor redColor];
     [closeBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    closeBtn.layer.cornerRadius = 12;
+    closeBtn.layer.cornerRadius = 10;
     [closeBtn addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
     [menuContainer addSubview:closeBtn];
     
-    [secureView addSubview:menuContainer];
-    [window addSubview:secureTextField];
+    [window addSubview:menuContainer];
     
     menuContainer.transform = CGAffineTransformMakeScale(0.8, 0.8);
     menuContainer.alpha = 0;
@@ -353,140 +251,124 @@ static NSTimer *autoPlayTimer = nil;
 }
 
 + (void)addSwitchToView:(UIView *)view yPos:(int)y title:(NSString *)title action:(SEL)action {
-    [self addSwitchToView:view yPos:y title:title action:action isOn:NO];
-}
-
-+ (void)addSwitchToView:(UIView *)view yPos:(int)y title:(NSString *)title action:(SEL)action isOn:(BOOL)isOn {
-    UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(25, y, 230, 30)];
+    UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(25, y, 180, 30)];
     lbl.text = title;
     lbl.textColor = [UIColor whiteColor];
     lbl.font = [UIFont boldSystemFontOfSize:14];
     [view addSubview:lbl];
     
-    UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectMake(265, y, 50, 30)];
+    UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectMake(240, y, 50, 30)];
     toggle.onTintColor = [UIColor cyanColor];
-    [toggle setOn:isOn];
     [toggle addTarget:self action:action forControlEvents:UIControlEventValueChanged];
     [view addSubview:toggle];
 }
 
-+ (void)toggleLongLine:(UISwitch *)sender {
-    // تنفيذ البحث في خلفية لتجنب التجميد
+// --- السهم الطويل ---
++ (void)toggleLongLineAction:(UISwitch *)sender {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         if (cachedLongLineAddress == 0) {
-            uint64_t found = find_pattern_in_library(GAME_LIBRARY_NAME, longLinePattern);
+            uint64_t found = find_pattern_in_library("UnityFramework", "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3");
+            if (found == 0) {
+                found = find_pattern_in_library("libil2cpp.so", "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3");
+            }
             if (found == 0) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [sender setOn:NO animated:YES];
                 });
-                NSLog(@"[IPA BLACK] لم يتم العثور على نمط Long Line");
                 return;
             }
-            cachedLongLineAddress = found + LONG_LINE_PATTERN_OFFSET;
-            NSLog(@"[IPA BLACK] تم العثور على عنوان Long Line: 0x%llx", cachedLongLineAddress);
+            cachedLongLineAddress = found + 0x4;
         }
         
-        float newValue = sender.isOn ? LONG_LINE_ACTIVE_VALUE : LONG_LINE_DEFAULT_VALUE;
-        write_memory(cachedLongLineAddress, &newValue, sizeof(float));
-        NSLog(@"[IPA BLACK] Long Line %@! القيمة: %.2f", sender.isOn ? @"مفعل" : @"معطل", newValue);
+        float value = sender.isOn ? 20.0f : 1.0f;
+        write_memory(cachedLongLineAddress, &value, sizeof(float));
     });
 }
 
-+ (void)toggleStreamProof:(UISwitch *)sender {
-    if (sender.isOn) {
-        secureTextField.secureTextEntry = YES;
-    } else {
-        secureTextField.secureTextEntry = NO;
-    }
+// --- تحديد الجيوب ---
++ (void)togglePocketsOverlay:(UISwitch *)sender {
+    pocketsOverlayEnabled = sender.isOn;
+    [self updateOverlayVisibility];
 }
 
-+ (void)toggleAntiBan:(UISwitch *)sender {
-    if (sender.isOn) {
-        ipa_black_anti_prediction();
-    }
+// --- خطوط التوجيه ---
++ (void)toggleGuideLines:(UISwitch *)sender {
+    guideLinesEnabled = sender.isOn;
+    [self updateOverlayVisibility];
 }
 
-+ (void)toggleAutoPlay:(UISwitch *)sender {
-    autoPlayEnabled = sender.isOn;
-    if (autoPlayEnabled) {
-        [self startAutoPlayTimer];
-    } else {
-        [self stopAutoPlayTimer];
-    }
-}
-
-+ (void)levelChanged:(UISegmentedControl *)sender {
-    autoPlayLevel = (int)sender.selectedSegmentIndex;
-    if (autoPlayEnabled) {
-        [self stopAutoPlayTimer];
-        [self startAutoPlayTimer];
-    }
-}
-
-+ (void)startAutoPlayTimer {
-    if (autoPlayTimer) {
-        [autoPlayTimer invalidate];
-        autoPlayTimer = nil;
+// تحديث إظهار/إخفاء الطبقة وفق الإعدادات
++ (void)updateOverlayVisibility {
+    if (!overlayView) {
+        if (pocketsOverlayEnabled || guideLinesEnabled) {
+            overlayView = [[OverlayView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+            overlayView.backgroundColor = [UIColor clearColor];
+            overlayView.userInteractionEnabled = NO;
+            overlayView.pocketPositions = [self getPocketPositionsFromMemory];
+            overlayView.pocketRadius = pocketRadius;
+            overlayView.cueBallPosition = cueBallPosition;
+            overlayView.aimAngle = aimAngleValue;
+            
+            UIWindow *window = getKeyWindow();
+            if (window) {
+                [window addSubview:overlayView];
+            }
+        }
     }
     
-    float delay = 1.0f;
-    switch (autoPlayLevel) {
-        case 0: delay = AUTO_PLAY_DELAY_BEGINNER; break;
-        case 1: delay = AUTO_PLAY_DELAY_INTERMEDIATE; break;
-        case 2: delay = AUTO_PLAY_DELAY_PRO; break;
+    if (overlayView) {
+        overlayView.showPockets = pocketsOverlayEnabled;
+        overlayView.showGuideLines = guideLinesEnabled;
+        overlayView.hidden = !(pocketsOverlayEnabled || guideLinesEnabled);
+        overlayView.pocketRadius = pocketRadius;
+        overlayView.pocketPositions = [self getPocketPositionsFromMemory];
+        overlayView.cueBallPosition = cueBallPosition;
+        overlayView.aimAngle = aimAngleValue;
+        [overlayView setNeedsDisplay];
     }
+}
+
+// زيادة حجم الجيب
++ (void)increasePocketSize {
+    pocketRadius += 2.0;
+    if (pocketRadius > 30.0) pocketRadius = 30.0;
+    [self updateOverlayVisibility];
+}
+
+// تقليل حجم الجيب
++ (void)decreasePocketSize {
+    pocketRadius -= 2.0;
+    if (pocketRadius < 5.0) pocketRadius = 5.0;
+    [self updateOverlayVisibility];
+}
+
+// هذه الدالة يجب أن تملأها بالمنطق الصحيح لقراءة مواقع الجيوب من الذاكرة
++ (NSArray *)getPocketPositionsFromMemory {
+    // حالياً نستخدم مواقع ثابتة تقريبية (يجب استبدالها بالقراءة الفعلية)
+    NSMutableArray *positions = [NSMutableArray array];
     
-    autoPlayTimer = [NSTimer scheduledTimerWithTimeInterval:delay
-                                                     target:self
-                                                   selector:@selector(autoPlayTick:)
-                                                   userInfo:nil
-                                                    repeats:YES];
-}
-
-+ (void)stopAutoPlayTimer {
-    if (autoPlayTimer) {
-        [autoPlayTimer invalidate];
-        autoPlayTimer = nil;
-    }
-}
-
-+ (void)autoPlayTick:(NSTimer *)timer {
-    if (!autoPlayEnabled) {
-        [self stopAutoPlayTimer];
-        return;
-    }
-    [self performShot];
-}
-
-+ (void)performShot {
-    float strength = 1.0f;
-    float aimSpeed = 1.0f;
-    switch (autoPlayLevel) {
-        case 0: strength = AUTO_PLAY_STRENGTH_BEGINNER; aimSpeed = AUTO_PLAY_AIM_SPEED_BEGINNER; break;
-        case 1: strength = AUTO_PLAY_STRENGTH_INTERMEDIATE; aimSpeed = AUTO_PLAY_AIM_SPEED_INTERMEDIATE; break;
-        case 2: strength = AUTO_PLAY_STRENGTH_PRO; aimSpeed = AUTO_PLAY_AIM_SPEED_PRO; break;
-    }
-    NSLog(@"[IPA BLACK] تنفيذ ضربة - القوة: %.2f، السرعة: %.2f", strength, aimSpeed);
-    // TODO: ضع هنا منطق الضربة الفعلي
-}
-
-+ (void)openTelegram {
-    NSURL *tgApp = [NSURL URLWithString:@"tg://resolve?domain=hl00ss"];
-    NSURL *tgWeb = [NSURL URLWithString:@"https://t.me/hl00ss"];
-    if ([[UIApplication sharedApplication] canOpenURL:tgApp]) {
-        [[UIApplication sharedApplication] openURL:tgApp options:@{} completionHandler:nil];
-    } else {
-        [[UIApplication sharedApplication] openURL:tgWeb options:@{} completionHandler:nil];
-    }
+    CGPoint p1 = CGPointMake(80, 180);
+    CGPoint p2 = CGPointMake(320, 180);
+    CGPoint p3 = CGPointMake(80, 550);
+    CGPoint p4 = CGPointMake(320, 550);
+    CGPoint p5 = CGPointMake(200, 130);
+    CGPoint p6 = CGPointMake(200, 600);
+    
+    [positions addObject:[NSValue valueWithCGPoint:p1]];
+    [positions addObject:[NSValue valueWithCGPoint:p2]];
+    [positions addObject:[NSValue valueWithCGPoint:p3]];
+    [positions addObject:[NSValue valueWithCGPoint:p4]];
+    [positions addObject:[NSValue valueWithCGPoint:p5]];
+    [positions addObject:[NSValue valueWithCGPoint:p6]];
+    
+    return positions;
 }
 
 + (void)closeMenu {
     [UIView animateWithDuration:0.3 animations:^{
-        menuContainer.transform = CGAffineTransformMakeScale(0.8, 0.8);
         menuContainer.alpha = 0;
     } completion:^(BOOL finished) {
-        [secureTextField removeFromSuperview];
-        secureTextField = nil;
+        [menuContainer removeFromSuperview];
         menuContainer = nil;
     }];
 }
@@ -494,38 +376,22 @@ static NSTimer *autoPlayTimer = nil;
 @end
 
 // ====================================================
-// نقطة الانطلاق
+// نقطة الانطلاق (تأخير 30 ثانية)
 // ====================================================
 static void __attribute__((constructor)) initialize_ipa_black() {
-    applyUltimateBypass();
-    ipa_black_anti_prediction();
-    
-    // تأخير أطول (15 ثانية) لضمان تحميل اللعبة بالكامل
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIWindow *window = getKeyWindow();
         if (window) {
             UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
             floatingBtn.frame = CGRectMake(20, 100, 60, 60);
             floatingBtn.backgroundColor = [UIColor blackColor];
             floatingBtn.layer.cornerRadius = 30;
-            floatingBtn.layer.borderWidth = 2.5;
+            floatingBtn.layer.borderWidth = 2.0;
             floatingBtn.layer.borderColor = [UIColor cyanColor].CGColor;
-            
             [floatingBtn setTitle:@"IPA" forState:UIControlStateNormal];
-            floatingBtn.titleLabel.font = [UIFont boldSystemFontOfSize:18];
             [floatingBtn setTitleColor:[UIColor cyanColor] forState:UIControlStateNormal];
-            
             [floatingBtn addTarget:[IPABlackMenu class] action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
-            
-            UITextField *secureFloatingField = [[UITextField alloc] initWithFrame:floatingBtn.frame];
-            secureFloatingField.secureTextEntry = YES;
-            secureFloatingField.userInteractionEnabled = YES;
-            UIView *secureFloatingView = secureFloatingField.subviews.firstObject;
-            secureFloatingView.userInteractionEnabled = YES;
-            
-            floatingBtn.frame = CGRectMake(0, 0, 60, 60);
-            [secureFloatingView addSubview:floatingBtn];
-            [window addSubview:secureFloatingField];
+            [window addSubview:floatingBtn];
         }
     });
 }

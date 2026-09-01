@@ -6,6 +6,7 @@
 #import <unistd.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <mach/mach.h>
+#import <mach/mach_vm.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import "fishhook.h"
@@ -14,33 +15,52 @@
 // منطقة الإعدادات - ضع هنا أنماط البايتات (Patterns)
 // ====================================================
 
+// اسم المكتبة الرئيسية للعبة (غالباً UnityFramework أو libil2cpp.so)
 #define GAME_LIBRARY_NAME "UnityFramework"
 
+// نمط البايتات للبحث عن متغير طول خط التوجيه (Long Line)
+// استبدل هذا بالنمط الصحيح الذي حصلت عليه من التحليل
 static const char *longLinePattern = "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3";
+
+// إزاحة إضافية بعد العثور على النمط (إذا كان العنوان الفعلي بعد بداية النمط بمسافة)
 #define LONG_LINE_PATTERN_OFFSET 0x4
 
+// قيمة الخط الطويل عند التفعيل
 #define LONG_LINE_ACTIVE_VALUE   20.0f
+// القيمة الافتراضية
 #define LONG_LINE_DEFAULT_VALUE  1.0f
 
 // ====================================================
 // إعدادات اللعب التلقائي (Auto Play)
 // ====================================================
-#define AUTO_PLAY_STRENGTH_BEGINNER   0.6f
-#define AUTO_PLAY_STRENGTH_INTERMEDIATE 0.8f
-#define AUTO_PLAY_STRENGTH_PRO       1.0f
+#define AUTO_PLAY_STRENGTH_BEGINNER      0.6f
+#define AUTO_PLAY_STRENGTH_INTERMEDIATE  0.8f
+#define AUTO_PLAY_STRENGTH_PRO           1.0f
 
-#define AUTO_PLAY_DELAY_BEGINNER      3.0f
-#define AUTO_PLAY_DELAY_INTERMEDIATE  2.0f
-#define AUTO_PLAY_DELAY_PRO           1.0f
+#define AUTO_PLAY_DELAY_BEGINNER         3.0f
+#define AUTO_PLAY_DELAY_INTERMEDIATE     2.0f
+#define AUTO_PLAY_DELAY_PRO              1.0f
 
-#define AUTO_PLAY_AIM_SPEED_BEGINNER   0.5f
+#define AUTO_PLAY_AIM_SPEED_BEGINNER     0.5f
 #define AUTO_PLAY_AIM_SPEED_INTERMEDIATE 0.8f
-#define AUTO_PLAY_AIM_SPEED_PRO        1.2f
+#define AUTO_PLAY_AIM_SPEED_PRO          1.2f
 
 // ====================================================
-// دوال مساعدة للذاكرة
+// دوال مساعدة للذاكرة (64-bit)
 // ====================================================
 
+// تعريف يدوي احتياطي إذا لم يتوفر في الرؤوس
+#ifndef mach_vm_read_overwrite
+extern kern_return_t mach_vm_read_overwrite(
+    vm_map_t target_task,
+    mach_vm_address_t address,
+    mach_vm_size_t size,
+    mach_vm_address_t data,
+    mach_vm_size_t *outsize
+);
+#endif
+
+// كتابة البيانات في الذاكرة
 void write_memory(uint64_t address, void *data, size_t size) {
     kern_return_t kr;
     mach_port_t task = mach_task_self();
@@ -52,15 +72,21 @@ void write_memory(uint64_t address, void *data, size_t size) {
     }
 }
 
+// قراءة البيانات من الذاكرة
 void read_memory(uint64_t address, void *buffer, size_t size) {
     kern_return_t kr;
     mach_vm_size_t outsize;
-    kr = mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)address, (mach_vm_size_t)size, (mach_vm_address_t)buffer, &outsize);
+    kr = mach_vm_read_overwrite(mach_task_self(),
+                                (mach_vm_address_t)address,
+                                (mach_vm_size_t)size,
+                                (mach_vm_address_t)buffer,
+                                &outsize);
     if (kr != KERN_SUCCESS) {
         NSLog(@"[IPA BLACK] فشل في القراءة من العنوان 0x%llx, الخطأ: %d", address, kr);
     }
 }
 
+// الحصول على العنوان الأساسي لمكتبة
 uint64_t get_base_address(const char *libName) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *name = _dyld_get_image_name(i);
@@ -71,7 +97,7 @@ uint64_t get_base_address(const char *libName) {
     return 0;
 }
 
-// دالة للحصول على النافذة الرئيسية الحالية (متوافقة مع iOS 13+)
+// الحصول على النافذة الرئيسية الحالية (متوافقة مع iOS 13+)
 UIWindow *getKeyWindow(void) {
     UIWindow *keyWindow = nil;
     if (@available(iOS 13.0, *)) {
@@ -92,6 +118,7 @@ UIWindow *getKeyWindow(void) {
 // دوال البحث عن أنماط البايتات (Pattern Scanning)
 // ====================================================
 
+// تحويل النمط النصي إلى بايتات وقناع
 void parse_pattern(const char *pattern, unsigned char **bytes, char **mask, size_t *length) {
     size_t len = strlen(pattern);
     size_t count = (len + 1) / 3;
@@ -114,6 +141,7 @@ void parse_pattern(const char *pattern, unsigned char **bytes, char **mask, size
     (*mask)[count] = '\0';
 }
 
+// البحث عن نمط داخل نطاق
 uint64_t find_pattern_in_range(uint64_t start, uint64_t end, const char *pattern) {
     unsigned char *bytes;
     char *mask;
@@ -144,6 +172,7 @@ uint64_t find_pattern_in_range(uint64_t start, uint64_t end, const char *pattern
     return 0;
 }
 
+// البحث عن نمط داخل مكتبة معينة (ضمن مقطع __TEXT)
 uint64_t find_pattern_in_library(const char *libName, const char *pattern) {
     uint64_t base = get_base_address(libName);
     if (base == 0) {
@@ -403,6 +432,9 @@ static NSTimer *autoPlayTimer = nil;
     [view addSubview:toggle];
 }
 
+// -------------------------------
+// تفعيل السهم الطويل (Long Line)
+// -------------------------------
 + (void)toggleLongLine:(UISwitch *)sender {
     if (cachedLongLineAddress == 0) {
         uint64_t found = find_pattern_in_library(GAME_LIBRARY_NAME, longLinePattern);
@@ -440,6 +472,9 @@ static NSTimer *autoPlayTimer = nil;
     }
 }
 
+// -------------------------------
+// اللعب التلقائي (Auto Play)
+// -------------------------------
 + (void)toggleAutoPlay:(UISwitch *)sender {
     autoPlayEnabled = sender.isOn;
     if (autoPlayEnabled) {
@@ -531,7 +566,14 @@ static NSTimer *autoPlayTimer = nil;
     
     // ====================================================
     // هنا يجب إضافة الكود الفعلي للضربة التلقائية
+    // يمكن أن يتضمن:
+    // 1. استدعاء دالة داخلية في اللعبة (مثل دالة Shot)
+    // 2. محاكاة لمسة على الشاشة (سحب الإصبع)
+    // 3. ضبط زاوية وقوة الضربة عبر تعديل متغيرات الذاكرة
     // ====================================================
+    // مثال وهمي:
+    // call_game_shot_function(strength, aimSpeed);
+    // simulate_touch_swipe(startX, startY, endX, endY);
 }
 
 + (void)openTelegram {

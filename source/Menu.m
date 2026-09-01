@@ -25,17 +25,14 @@ static const char *longLinePattern = "48 8B 05 ?? ?? ?? ?? F3 0F 10 00 C3";
 // ====================================================
 // إعدادات اللعب التلقائي (Auto Play)
 // ====================================================
-// قوة الضربة لكل مستوى (قيمة افتراضية، يمكن تعديلها حسب الحاجة)
-#define AUTO_PLAY_STRENGTH_BEGINNER   0.6f   // مبتدئ: قوة متوسطة
-#define AUTO_PLAY_STRENGTH_INTERMEDIATE 0.8f // متوسط: قوة أعلى
-#define AUTO_PLAY_STRENGTH_PRO       1.0f   // محترف: قوة كاملة
+#define AUTO_PLAY_STRENGTH_BEGINNER   0.6f
+#define AUTO_PLAY_STRENGTH_INTERMEDIATE 0.8f
+#define AUTO_PLAY_STRENGTH_PRO       1.0f
 
-// سرعة تنفيذ الضربة (تأخير بين الضربات بالثواني)
-#define AUTO_PLAY_DELAY_BEGINNER      3.0f   // مبتدئ: أبطأ
-#define AUTO_PLAY_DELAY_INTERMEDIATE  2.0f   // متوسط: أسرع
-#define AUTO_PLAY_DELAY_PRO           1.0f   // محترف: أسرع بكثير
+#define AUTO_PLAY_DELAY_BEGINNER      3.0f
+#define AUTO_PLAY_DELAY_INTERMEDIATE  2.0f
+#define AUTO_PLAY_DELAY_PRO           1.0f
 
-// سرعة تحريك المؤشر (محاكاة) - قد تحتاج لتطبيقها في دالة performShot
 #define AUTO_PLAY_AIM_SPEED_BEGINNER   0.5f
 #define AUTO_PLAY_AIM_SPEED_INTERMEDIATE 0.8f
 #define AUTO_PLAY_AIM_SPEED_PRO        1.2f
@@ -72,6 +69,23 @@ uint64_t get_base_address(const char *libName) {
         }
     }
     return 0;
+}
+
+// دالة للحصول على النافذة الرئيسية الحالية (متوافقة مع iOS 13+)
+UIWindow *getKeyWindow(void) {
+    UIWindow *keyWindow = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                keyWindow = scene.windows.firstObject;
+                break;
+            }
+        }
+    }
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].windows.firstObject;
+    }
+    return keyWindow;
 }
 
 // ====================================================
@@ -246,11 +260,8 @@ static __inline__ __attribute__((always_inline)) void ipa_black_anti_prediction(
 
 static UIView *menuContainer = nil;
 static UITextField *secureTextField = nil;
-
-// تخزين العنوان المكتشف لتجنب إعادة البحث كل مرة
 static uint64_t cachedLongLineAddress = 0;
 
-// متغيرات اللعب التلقائي
 static BOOL autoPlayEnabled = NO;
 static int autoPlayLevel = 0; // 0 = مبتدئ، 1 = متوسط، 2 = محترف
 static NSTimer *autoPlayTimer = nil;
@@ -258,7 +269,11 @@ static NSTimer *autoPlayTimer = nil;
 + (void)showMenu {
     if (menuContainer) return;
     
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    UIWindow *window = getKeyWindow();
+    if (!window) {
+        NSLog(@"[IPA BLACK] لا توجد نافذة رئيسية");
+        return;
+    }
     
     secureTextField = [[UITextField alloc] init];
     secureTextField.secureTextEntry = YES;
@@ -267,7 +282,7 @@ static NSTimer *autoPlayTimer = nil;
     UIView *secureView = secureTextField.subviews.firstObject;
     secureView.userInteractionEnabled = YES;
     
-    menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 340, 500)]; // زيادة الارتفاع لاستيعاب العناصر الجديدة
+    menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 340, 500)];
     menuContainer.center = window.center;
     
     UIVisualEffectView *blurMenu = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
@@ -315,26 +330,22 @@ static NSTimer *autoPlayTimer = nil;
     
     int startY = 100;
     
-    // الميزات الأساسية
     [self addSwitchToView:menuContainer yPos:startY title:@"السهم الطويل (Long Line)" action:@selector(toggleLongLine:)];
     [self addSwitchToView:menuContainer yPos:startY+45 title:@"إخفاء من التصوير (Stream Proof)" action:@selector(toggleStreamProof:) isOn:YES];
     [self addSwitchToView:menuContainer yPos:startY+90 title:@"تخطي الحماية (Anti-Ban)" action:@selector(toggleAntiBan:) isOn:YES];
     
-    // قسم اللعب التلقائي (Auto Play)
     UILabel *autoPlayLabel = [[UILabel alloc] initWithFrame:CGRectMake(25, startY+140, 290, 30)];
     autoPlayLabel.text = @"اللعب التلقائي (Auto Play)";
     autoPlayLabel.textColor = [UIColor cyanColor];
     autoPlayLabel.font = [UIFont boldSystemFontOfSize:16];
     [menuContainer addSubview:autoPlayLabel];
     
-    // مفتاح تفعيل/تعطيل اللعب التلقائي
     UISwitch *autoPlaySwitch = [[UISwitch alloc] initWithFrame:CGRectMake(265, startY+140, 50, 30)];
     autoPlaySwitch.onTintColor = [UIColor cyanColor];
     [autoPlaySwitch addTarget:self action:@selector(toggleAutoPlay:) forControlEvents:UIControlEventValueChanged];
     [autoPlaySwitch setOn:NO];
     [menuContainer addSubview:autoPlaySwitch];
     
-    // أزرار اختيار المستوى (Segmented Control)
     NSArray *levelItems = @[@"مبتدئ", @"متوسط", @"محترف"];
     UISegmentedControl *levelSegment = [[UISegmentedControl alloc] initWithItems:levelItems];
     levelSegment.frame = CGRectMake(25, startY+180, 290, 35);
@@ -343,7 +354,6 @@ static NSTimer *autoPlayTimer = nil;
     [levelSegment addTarget:self action:@selector(levelChanged:) forControlEvents:UIControlEventValueChanged];
     [menuContainer addSubview:levelSegment];
     
-    // زر التليجرام
     UIButton *tgButton = [UIButton buttonWithType:UIButtonTypeSystem];
     tgButton.frame = CGRectMake(40, startY+230, 260, 45);
     [tgButton setTitle:@"انضم للتليجرام: hl00ss" forState:UIControlStateNormal];
@@ -354,7 +364,6 @@ static NSTimer *autoPlayTimer = nil;
     [tgButton addTarget:self action:@selector(openTelegram) forControlEvents:UIControlEventTouchUpInside];
     [menuContainer addSubview:tgButton];
     
-    // زر الإغلاق
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     closeBtn.frame = CGRectMake(40, startY+285, 260, 45);
     [closeBtn setTitle:@"إغلاق القائمة (Close Menu)" forState:UIControlStateNormal];
@@ -394,9 +403,6 @@ static NSTimer *autoPlayTimer = nil;
     [view addSubview:toggle];
 }
 
-// -------------------------------
-// تفعيل السهم الطويل (Long Line)
-// -------------------------------
 + (void)toggleLongLine:(UISwitch *)sender {
     if (cachedLongLineAddress == 0) {
         uint64_t found = find_pattern_in_library(GAME_LIBRARY_NAME, longLinePattern);
@@ -434,11 +440,6 @@ static NSTimer *autoPlayTimer = nil;
     }
 }
 
-// -------------------------------
-// اللعب التلقائي (Auto Play)
-// -------------------------------
-
-// تبديل حالة اللعب التلقائي
 + (void)toggleAutoPlay:(UISwitch *)sender {
     autoPlayEnabled = sender.isOn;
     if (autoPlayEnabled) {
@@ -450,34 +451,31 @@ static NSTimer *autoPlayTimer = nil;
     }
 }
 
-// تغيير المستوى
 + (void)levelChanged:(UISegmentedControl *)sender {
     autoPlayLevel = (int)sender.selectedSegmentIndex;
     NSLog(@"[IPA BLACK] تم تغيير مستوى اللعب التلقائي إلى: %d", autoPlayLevel);
     
-    // إذا كان اللعب التلقائي مفعلاً، نعيد جدولة المؤقت ليتوافق مع المستوى الجديد
     if (autoPlayEnabled) {
         [self stopAutoPlayTimer];
         [self startAutoPlayTimer];
     }
 }
 
-// بدء المؤقت
 + (void)startAutoPlayTimer {
     if (autoPlayTimer) {
         [autoPlayTimer invalidate];
         autoPlayTimer = nil;
     }
     
-    float delay = 1.0f; // القيمة الافتراضية
+    float delay = 1.0f;
     switch (autoPlayLevel) {
-        case 0: // مبتدئ
+        case 0:
             delay = AUTO_PLAY_DELAY_BEGINNER;
             break;
-        case 1: // متوسط
+        case 1:
             delay = AUTO_PLAY_DELAY_INTERMEDIATE;
             break;
-        case 2: // محترف
+        case 2:
             delay = AUTO_PLAY_DELAY_PRO;
             break;
         default:
@@ -493,7 +491,6 @@ static NSTimer *autoPlayTimer = nil;
     [[NSRunLoop mainRunLoop] addTimer:autoPlayTimer forMode:NSRunLoopCommonModes];
 }
 
-// إيقاف المؤقت
 + (void)stopAutoPlayTimer {
     if (autoPlayTimer) {
         [autoPlayTimer invalidate];
@@ -501,33 +498,28 @@ static NSTimer *autoPlayTimer = nil;
     }
 }
 
-// تنفيذ ضربة تلقائية واحدة
 + (void)autoPlayTick:(NSTimer *)timer {
     if (!autoPlayEnabled) {
         [self stopAutoPlayTimer];
         return;
     }
-    
-    // هنا يتم تنفيذ الضربة التلقائية
     [self performShot];
 }
 
-// دالة تنفيذ الضربة (يجب تعبئتها بالمنطق الفعلي)
 + (void)performShot {
-    // تحديد القوة بناءً على المستوى
     float strength = 1.0f;
     float aimSpeed = 1.0f;
     
     switch (autoPlayLevel) {
-        case 0: // مبتدئ
+        case 0:
             strength = AUTO_PLAY_STRENGTH_BEGINNER;
             aimSpeed = AUTO_PLAY_AIM_SPEED_BEGINNER;
             break;
-        case 1: // متوسط
+        case 1:
             strength = AUTO_PLAY_STRENGTH_INTERMEDIATE;
             aimSpeed = AUTO_PLAY_AIM_SPEED_INTERMEDIATE;
             break;
-        case 2: // محترف
+        case 2:
             strength = AUTO_PLAY_STRENGTH_PRO;
             aimSpeed = AUTO_PLAY_AIM_SPEED_PRO;
             break;
@@ -539,14 +531,7 @@ static NSTimer *autoPlayTimer = nil;
     
     // ====================================================
     // هنا يجب إضافة الكود الفعلي للضربة التلقائية
-    // يمكن أن يتضمن:
-    // 1. استدعاء دالة داخلية في اللعبة (مثل دالة Shot)
-    // 2. محاكاة لمسة على الشاشة (سحب الإصبع من الكرة إلى الاتجاه المطلوب)
-    // 3. ضبط زاوية وقوة الضربة عبر تعديل متغيرات الذاكرة
     // ====================================================
-    // مثال وهمي:
-    // call_game_shot_function(strength, aimSpeed);
-    // simulate_touch_swipe(startX, startY, endX, endY);
 }
 
 + (void)openTelegram {
@@ -582,7 +567,7 @@ static void __attribute__((constructor)) initialize_ipa_black() {
     ipa_black_anti_prediction();
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+        UIWindow *window = getKeyWindow();
         if (window) {
             UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
             floatingBtn.frame = CGRectMake(20, 100, 60, 60);

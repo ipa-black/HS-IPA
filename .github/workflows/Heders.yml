@@ -1,0 +1,124 @@
+name: Extract 8BP Ultimate Mod Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      headers_url:
+        description: 'رابط ملف الـ ZIP لملفات الهدر (.h)'
+        required: true
+        type: string
+
+jobs:
+  extract-ultimate-values:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Download and Extract
+        run: |
+          mkdir headers_dir
+          wget -q -O headers.zip "${{ github.event.inputs.headers_url }}"
+          unzip -q headers.zip -d headers_dir/ || tar -xf headers.zip -C headers_dir/
+
+      - name: Scan & Parse Everything
+        run: |
+          cat << 'EOF' > parse_ultimate.py
+          import os
+          import json
+          import re
+          from pathlib import Path
+
+          target_dir = 'headers_dir'
+          ultimate_data = {}
+
+          # جميع الكلمات المفتاحية الممكنة للهاكات (توجيه، فيزياء، حالة اللعبة، الدور)
+          keywords_regex = r'(Cue|Guideline|Aim|Trajectory|Predict|Pocket|Hole|Target|Ball|Collision|Raycast|Physics|Table|Power|Force|Friction|Velocity|Damping|Spin|Mass|Restitution|Bounce|Manager|State|Turn|Match)'
+          target_keywords = re.compile(keywords_regex, re.IGNORECASE)
+
+          # أنماط الاستخراج الدقيقة
+          class_pattern = re.compile(r'(?:@interface|class|struct|enum)\s+([A-Za-z0-9_]+)')
+          define_pattern = re.compile(r'^#define\s+([A-Za-z0-9_]+)\s+([0-9\.\-f]+|"[^"]+"|0x[0-9a-fA-F]+)')
+          assign_pattern = re.compile(r'\b([A-Za-z0-9_]+)\s*=\s*([0-9\.\-f]+|"[^"]+"|0x[0-9a-fA-F]+)')
+
+          for filepath in Path(target_dir).rglob('*.h'):
+              try:
+                  with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                      content = f.read()
+                  
+                  # تخطي سريع إذا كان الملف لا يهمنا
+                  if not target_keywords.search(content):
+                      continue
+
+                  file_info = {
+                      'path': str(filepath),
+                      'classes': [],
+                      'properties_with_offsets': [],
+                      'methods_with_offsets': [],
+                      'explicit_constants': []
+                  }
+
+                  # 1. استخراج الكلاسات والـ Structs
+                  classes = class_pattern.findall(content)
+                  file_info['classes'] = list(set([c for c in classes if target_keywords.search(c)]))
+
+                  # 2. البحث الدقيق سطراً بسطر
+                  for line in content.split('\n'):
+                      if not target_keywords.search(line):
+                          continue
+
+                      # استخراج الدوال والأوفست
+                      if '// 0x' in line or '-' in line or '+' in line or 'virtual' in line:
+                          m_match = re.search(r'([-+]\s*\([^)]+\).*?;|virtual\s+.*?;)\s*(?://\s*(0x[0-9a-fA-F]+))?', line)
+                          if m_match:
+                              func = m_match.group(1).strip().replace('  ', ' ')
+                              offset = m_match.group(2) if m_match.group(2) else "No Offset"
+                              file_info['methods_with_offsets'].append(f"{func} -> {offset}")
+
+                      # استخراج الخصائص والأوفست
+                      if '@property' in line or ';' in line:
+                          p_match = re.search(r'(@property\s*\([^)]*\)\s*.*?;|[A-Za-z0-9_<>*]+\s+[A-Za-z0-9_]+;)\s*(?://\s*(0x[0-9a-fA-F]+))?', line)
+                          if p_match and not p_match.group(1).startswith('-') and not p_match.group(1).startswith('+'):
+                              prop = p_match.group(1).strip()
+                              offset = p_match.group(2) if p_match.group(2) else "No Offset"
+                              file_info['properties_with_offsets'].append(f"{prop} -> {offset}")
+
+                      # استخراج الثوابت (Defines & Assignments)
+                      d_match = define_pattern.search(line)
+                      if d_match:
+                          file_info['explicit_constants'].append(f"#define {d_match.group(1)} = {d_match.group(2)}")
+
+                      for a_match in assign_pattern.findall(line):
+                          # تجنب أخذ المتغيرات العشوائية القصيرة جداً
+                          if len(a_match[0]) > 2:
+                              file_info['explicit_constants'].append(f"{a_match[0]} = {a_match[1]}")
+
+                  # تنظيف التكرارات
+                  file_info['properties_with_offsets'] = list(set(file_info['properties_with_offsets']))
+                  file_info['methods_with_offsets'] = list(set(file_info['methods_with_offsets']))
+                  file_info['explicit_constants'] = list(set(file_info['explicit_constants']))
+
+                  # حفظ الملف فقط إذا كان يحتوي على بيانات حقيقية
+                  if file_info['classes'] or file_info['methods_with_offsets'] or file_info['explicit_constants']:
+                      ultimate_data[filepath.name] = file_info
+
+              except Exception as e:
+                  pass
+
+          with open('8bp_ultimate_data.json', 'w', encoding='utf-8') as f:
+              json.dump(ultimate_data, f, ensure_ascii=False, indent=4)
+          print("تم استخراج كافة البيانات الشاملة بنجاح.")
+          EOF
+          python parse_ultimate.py
+
+      - name: Upload Ultimate Data JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: 8bp-ultimate-data
+          path: 8bp_ultimate_data.json

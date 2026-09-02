@@ -1,107 +1,103 @@
-name: 5. The XREF Sniper
+name: Extract Offsets from Headers
 
 on:
   workflow_dispatch:
     inputs:
-      ipa_url:
-        description: 'رابط تحميل الـ IPA المباشر'
+      headers_url:
+        description: 'رابط ملف الهيدر (zip أو نصي)'
         required: true
-        type: string
-      target_string:
-        description: 'اسم الكلاس أو النص الذي تبحث عنه (مثال: 17BallLineCollision)'
-        required: true
-        type: string
-        default: '17BallLineCollision'
+        default: 'https://example.com/headers.zip'
 
 jobs:
-  snipe_offsets:
-    runs-on: macos-latest
+  extract:
+    runs-on: ubuntu-latest
     steps:
-      - name: 1. Download & Extract IPA
-        id: locate
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Extract offsets
+        env:
+          URL: ${{ github.event.inputs.headers_url }}
+        shell: python
         run: |
-          curl -L "${{ github.event.inputs.ipa_url }}" -o target.ipa
-          unzip -q target.ipa -d extracted/
-          
-          # إصلاح مشكلة المسار المزدوج
-          APP_DIR=$(find extracted/Payload -name "*.app" -type d | head -n 1)
-          BINARY_NAME=$(basename "$APP_DIR" .app)
-          BINARY_PATH="$APP_DIR/$BINARY_NAME"
-          
-          echo "binary_path=$BINARY_PATH" >> $GITHUB_OUTPUT
+          import requests, re, zipfile, io, os, json
 
-      - name: 2. Install Tools
-        run: brew install radare2
+          url = os.environ['URL']
+          print(f"Downloading {url}...")
+          r = requests.get(url)
+          if r.status_code != 200:
+              print("Failed to download")
+              exit(1)
+          content = r.content
 
-      - name: 3. Hunt String Address
-        id: hunt
-        run: |
-          BINARY="${{ steps.locate.outputs.binary_path }}"
-          TARGET="${{ github.event.inputs.target_string }}"
-          
-          echo "البحث عن العنوان الفيزيائي للنص: $TARGET"
-          echo "داخل المسار: $BINARY"
-          
-          # استخراج عنوان النص بصيغة Hex
-          STR_ADDR=$(rabin2 -z "$BINARY" | grep -i "$TARGET" | awk '{print $3}')
-          
-          if [ -z "$STR_ADDR" ]; then
-            echo "لم يتم العثور على النص!"
-            exit 1
-          fi
-          
-          # تنظيف العنوان ليكون جاهزاً للبحث
-          CLEAN_ADDR=$(echo $STR_ADDR | sed 's/0x//g')
-          echo "تم العثور على النص في العنوان: $CLEAN_ADDR"
-          echo "clean_addr=$CLEAN_ADDR" >> $GITHUB_OUTPUT
+          files = []
+          try:
+              z = zipfile.ZipFile(io.BytesIO(content))
+              for name in z.namelist():
+                  if name.endswith('/'): continue
+                  try:
+                      data = z.read(name).decode('utf-8', errors='ignore')
+                      files.append((name, data))
+                  except: pass
+          except zipfile.BadZipFile:
+              files.append(("single.txt", content.decode('utf-8', errors='ignore')))
 
-            - name: 4. The VTable Hunter Engine
-        run: |
-          BINARY="${{ steps.locate.outputs.binary_path }}"
-          ADDR="${{ steps.hunt.outputs.clean_addr }}"
-          
-          mkdir -p Sniper_Results
-          RES="Sniper_Results/XREF_Result.txt"
-          
-          echo "🎯 الهدف: البحث المتقدم عن الكلاس (C++ VTable Hunting)" > $RES
-          echo "📍 عنوان النص في الذاكرة: 0x$ADDR" >> $RES
-          echo "---------------------------------------------------" >> $RES
-          
-          # 1. البحث عن مؤشر معلومات النوع (TypeInfo)
-          echo "🔍 1. البحث عن مؤشر الـ TypeInfo..." >> $RES
-          r2 -q -c "/8 0x$ADDR" "$BINARY" > typeinfo.txt
-          
-          T_HIT=$(cat typeinfo.txt | grep -i "hit" | head -n 1 | awk '{print $1}')
-          
-          if [ ! -z "$T_HIT" ]; then
-             echo "✅ تم العثور على TypeInfo في: $T_HIT" >> $RES
-             T_CLEAN=$(echo $T_HIT | sed 's/0x//g')
-             
-             echo "🔍 2. البحث عن جدول الدوال (VTable) الذي يملك هذا الـ TypeInfo..." >> $RES
-             r2 -q -c "/8 0x$T_CLEAN" "$BINARY" > vtable.txt
-             
-             V_HIT=$(cat vtable.txt | grep -i "hit" | head -n 1 | awk '{print $1}')
-             
-             if [ ! -z "$V_HIT" ]; then
-                echo "✅ تم العثور على VTable (جدول الكلاس الحقيقي) في: $V_HIT" >> $RES
-                echo "🔥 استخراج دوال هذا الكلاس (هذه هي الـ Offsets الحقيقية!):" >> $RES
-                echo "---------------------------------------------------" >> $RES
-                
-                # طباعة 20 مؤشر من جدول الدوال (هذه هي العناوين التي سنعدل عليها)
-                r2 -q -c "pxq 160 @ $V_HIT" "$BINARY" >> $RES
-             else
-                echo "❌ لم يتم العثور على VTable." >> $RES
-             fi
-          else
-             echo "❌ لم يتم العثور على TypeInfo. (سنقوم ببحث بديل شامل)" >> $RES
-             r2 -q -c "aaa; axt 0x$ADDR" "$BINARY" >> $RES
-          fi
-          
-          cat $RES
+          entries = []
+          # أنماط للبحث عن العناوين
+          pattern_rva = re.compile(r'(?:RVA|Address|Offset)\s*[:=]\s*(0x[0-9A-Fa-f]+)', re.IGNORECASE)
+          pattern_name = re.compile(r'([a-zA-Z_]\w*)\s*[;\(]')
 
+          for filepath, data in files:
+              for line in data.splitlines():
+                  m = pattern_rva.search(line)
+                  if not m:
+                      # محاولة البحث عن أرقام سداسية كبيرة
+                      m = re.search(r'\b(0x[0-9A-Fa-f]{4,})\b', line)
+                  if not m:
+                      continue
+                  addr = m.group(1)
+                  nm = pattern_name.search(line)
+                  name = nm.group(1) if nm else 'Unknown'
+                  entries.append({"name": name, "address": addr, "line": line.strip()})
 
-      - name: 5. Upload Final XREFs
+          # توليد ملف header
+          lines = ['// Offsets extracted from headers', '#pragma once', '']
+          for e in entries:
+              define_name = re.sub(r'[^A-Za-z0-9_]', '_', e['name']).upper()
+              lines.append(f"// {e['line']}")
+              lines.append(f"#define {define_name}_OFFSET {e['address']}")
+              lines.append('')
+          header_content = '\n'.join(lines)
+
+          with open('extracted_offsets.h', 'w') as f:
+              f.write(header_content)
+
+          # حفظ JSON للمراجعة
+          with open('extracted_offsets.json', 'w') as f:
+              json.dump(entries, f, indent=2)
+
+          print(f"Extracted {len(entries)} offsets")
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Sniper-XREF-Results
-          path: Sniper_Results/
+          name: offsets
+          path: |
+            extracted_offsets.h
+            extracted_offsets.json
+
+      - name: Commit to repo
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add extracted_offsets.h extracted_offsets.json
+          git commit -m "Update extracted offsets" || echo "No changes"
+          git push

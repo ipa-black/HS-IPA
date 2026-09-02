@@ -6,6 +6,7 @@ on:
     paths:
       - 'source/*.m'  
       - 'source/*.x'  
+      - 'source/*.xm'
       - 'source/*.c'
 
 jobs:
@@ -26,23 +27,51 @@ jobs:
       - name: Add Arsenal to PATH
         run: echo "$HOME/ios_master_env/tools" >> $GITHUB_PATH
 
-      - name: Compile Code to Dylib
+      - name: Compile Code to Dylib (With Logos & Substrate)
         run: |
           APPLE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           THEOS_INCLUDE="$HOME/ios_master_env/theos/include"
 
           echo "تحميل مكتبة Fishhook لاختراق حماية C العميقة..."
-          curl -L -o source/fishhook.h https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.h
-          curl -L -o source/fishhook.c https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.c
+          curl -L -s -o source/fishhook.h https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.h
+          curl -L -s -o source/fishhook.c https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.c
+
+          echo "تحميل أداة Logos لتحويل أكواد الهاك..."
+          curl -L -s -o logos.pl https://raw.githubusercontent.com/theos/logos/master/bin/logos.pl
+          chmod +x logos.pl
+
+          echo "تحميل CydiaSubstrate الأساسية لعمل الـ Hooks..."
+          curl -L -s -o CydiaSubstrate.tbd https://raw.githubusercontent.com/theos/theos/master/vendor/lib/CydiaSubstrate.tbd
+
+          echo "تحويل ملفات Logos (.x / .xm) إلى Objective-C..."
+          shopt -s nullglob
+          for file in source/*.x source/*.xm; do
+            echo "Processing $file..."
+            perl logos.pl "$file" > "${file}.m"
+          done
 
           echo "Using Official Apple SDK: $APPLE_SDK"
 
+          # بناء جميع الملفات مع ربط CydiaSubstrate
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
             -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \
             -framework Foundation \
             -framework UIKit \
             -framework CoreGraphics \
+            -install_name @rpath/MyCustomTweak.dylib \
+            CydiaSubstrate.tbd \
+            -o MyCustomTweak.dylib source/*.m source/*.x.m source/*.xm.m source/*.c 2>/dev/null || true
+            
+          # إعادة البناء بشكل آمن لتجنب أخطاء nullglob في Clang
+          clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
+            -miphoneos-version-min=14.0 \
+            -I$THEOS_INCLUDE \
+            -framework Foundation \
+            -framework UIKit \
+            -framework CoreGraphics \
+            -install_name @rpath/MyCustomTweak.dylib \
+            CydiaSubstrate.tbd \
             -o MyCustomTweak.dylib source/*.m source/*.c
             
           echo "تم بناء الـ Dylib بنجاح!"

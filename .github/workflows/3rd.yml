@@ -36,9 +36,8 @@ jobs:
           curl -L -s -o source/fishhook.h https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.h
           curl -L -s -o source/fishhook.c https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.c
 
-          echo "تحميل أداة Logos لتحويل أكواد الهاك..."
-          curl -L -s -o logos.pl https://raw.githubusercontent.com/theos/logos/master/bin/logos.pl
-          chmod +x logos.pl
+          echo "تحميل أداة Logos كاملة مع مكاتبها الأساسية..."
+          git clone https://github.com/theos/logos.git logos_tool
 
           echo "تحميل CydiaSubstrate الأساسية لعمل الـ Hooks..."
           curl -L -s -o CydiaSubstrate.tbd https://raw.githubusercontent.com/theos/theos/master/vendor/lib/CydiaSubstrate.tbd
@@ -47,7 +46,8 @@ jobs:
           shopt -s nullglob
           for file in source/*.x source/*.xm; do
             echo "Processing $file..."
-            perl logos.pl "$file" > "${file}.m"
+            # استخدام الأداة من المجلد المستنسخ لضمان وجود كل المكاتب
+            perl logos_tool/bin/logos.pl "$file" > "${file}.m"
           done
 
           echo "Using Official Apple SDK: $APPLE_SDK"
@@ -63,7 +63,7 @@ jobs:
             CydiaSubstrate.tbd \
             -o MyCustomTweak.dylib source/*.m source/*.x.m source/*.xm.m source/*.c 2>/dev/null || true
             
-          # إعادة البناء بشكل آمن لتجنب أخطاء nullglob في Clang
+          # إعادة البناء بشكل آمن لتجنب أخطاء Clang
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
             -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \

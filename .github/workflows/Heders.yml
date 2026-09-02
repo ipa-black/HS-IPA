@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       headers_url:
-        description: 'رابط ملف الـ ZIP لملفات الهدر (.h)'
+        description: 'رابط مباشر لملف الـ ZIP الخاص بالهدرات'
         required: true
         type: string
 
@@ -24,8 +24,16 @@ jobs:
       - name: Download and Extract
         run: |
           mkdir headers_dir
+          echo "جاري تحميل الملفات من الرابط..."
           wget -q -O headers.zip "${{ github.event.inputs.headers_url }}"
-          unzip -q headers.zip -d headers_dir/ || tar -xf headers.zip -C headers_dir/
+          
+          echo "==== معلومات الملف المحمل ===="
+          ls -lh headers.zip
+          file headers.zip
+          echo "==============================="
+          
+          echo "جاري فك الضغط..."
+          unzip -q headers.zip -d headers_dir/ || tar -xf headers.zip -C headers_dir/ || (echo "❌ فشل فك الضغط! الرابط ليس ملف ZIP أو TAR حقيقي، الرجاء استخدام رابط تحميل مباشر." && exit 1)
 
       - name: Scan & Parse Everything
         run: |

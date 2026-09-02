@@ -37,11 +37,27 @@ jobs:
           curl -L -s -o source/fishhook.c https://raw.githubusercontent.com/facebook/fishhook/master/fishhook.c
 
           echo "تحميل أداة Logos..."
-          git clone https://github.com/theos/logos.git logos_tool
+          git clone https://github.com/theos/logos.git logos_tool || true
 
-          echo "تجهيز ملفات CydiaSubstrate (المكتبة + الهيدر)..."
+          echo "إنشاء ملف substrate.h محلياً لتجنب روابط 404 المعطوبة..."
           mkdir -p theos_headers
-          curl -L -s -o theos_headers/substrate.h https://raw.githubusercontent.com/theos/theos/master/vendor/include/substrate.h
+          cat << 'EOF' > theos_headers/substrate.h
+          #ifndef SUBSTRATE_H
+          #define SUBSTRATE_H
+          #include <objc/runtime.h>
+          #include <objc/message.h>
+          #ifdef __cplusplus
+          extern "C" {
+          #endif
+          void MSHookMessageEx(Class _class, SEL sel, IMP imp, IMP *result);
+          void MSHookFunction(void *symbol, void *replace, void **result);
+          #ifdef __cplusplus
+          }
+          #endif
+          #endif
+          EOF
+
+          echo "تحميل ملف CydiaSubstrate.tbd..."
           curl -L -s -o CydiaSubstrate.tbd https://raw.githubusercontent.com/theos/theos/master/vendor/lib/CydiaSubstrate.tbd
 
           echo "تحويل ملفات Logos (.x / .xm) إلى Objective-C..."
@@ -55,11 +71,12 @@ jobs:
 
           echo "Using Official Apple SDK: $APPLE_SDK"
 
-          # بناء جميع الملفات مع ربط CydiaSubstrate وتحديد مسار الهيدر (-Itheos_headers)
+          # بناء الملفات مع إجبار Clang على قراءة objc/runtime.h و theos_headers
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
             -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \
             -Itheos_headers \
+            -include objc/runtime.h \
             -framework Foundation \
             -framework UIKit \
             -framework CoreGraphics \

@@ -39,9 +39,10 @@ jobs:
           echo "تحميل أداة Logos..."
           git clone https://github.com/theos/logos.git logos_tool
 
-          echo "تحميل ملفات CydiaSubstrate (المكتبة + الهيدر)..."
+          echo "تجهيز ملفات CydiaSubstrate (المكتبة + الهيدر)..."
+          mkdir -p theos_headers
+          curl -L -s -o theos_headers/substrate.h https://raw.githubusercontent.com/theos/theos/master/vendor/include/substrate.h
           curl -L -s -o CydiaSubstrate.tbd https://raw.githubusercontent.com/theos/theos/master/vendor/lib/CydiaSubstrate.tbd
-          curl -L -s -o substrate.h https://raw.githubusercontent.com/theos/theos/master/vendor/include/substrate.h
 
           echo "تحويل ملفات Logos (.x / .xm) إلى Objective-C..."
           shopt -s nullglob
@@ -54,11 +55,11 @@ jobs:
 
           echo "Using Official Apple SDK: $APPLE_SDK"
 
-          # بناء جميع الملفات مع ربط CydiaSubstrate وتحديد مسار الهيدر (-I.)
+          # بناء جميع الملفات مع ربط CydiaSubstrate وتحديد مسار الهيدر (-Itheos_headers)
           clang -dynamiclib -arch arm64 -isysroot $APPLE_SDK \
             -miphoneos-version-min=14.0 \
             -I$THEOS_INCLUDE \
-            -I. \
+            -Itheos_headers \
             -framework Foundation \
             -framework UIKit \
             -framework CoreGraphics \
@@ -78,4 +79,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Ready-To-Use-Signed-Dylib
-          path: IPA BLACK.dylib
+          path: MyCustomTweak.dylib

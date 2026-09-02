@@ -1,12 +1,12 @@
-name: Extract Offsets from Headers
+name: Extract Real Offsets
 
 on:
   workflow_dispatch:
     inputs:
-      headers_url:
-        description: 'رابط ملف الهيدر (zip أو نصي)'
+      script_url:
+        description: 'رابط ملف script.json من Il2CppDumper'
         required: true
-        default: 'https://example.com/headers.zip'
+        default: 'https://example.com/script.json'
 
 jobs:
   extract:
@@ -25,71 +25,81 @@ jobs:
 
       - name: Extract offsets
         env:
-          URL: ${{ github.event.inputs.headers_url }}
+          SCRIPT_URL: ${{ github.event.inputs.script_url }}
         shell: python
         run: |
-          import requests, re, zipfile, io, os, json
+          import requests, json, re, os
 
-          url = os.environ['URL']
+          url = os.environ['SCRIPT_URL']
           print(f"Downloading {url}...")
           r = requests.get(url)
           if r.status_code != 200:
-              print("Failed to download")
+              print("Failed to download script.json")
               exit(1)
-          content = r.content
 
-          files = []
-          try:
-              z = zipfile.ZipFile(io.BytesIO(content))
-              for name in z.namelist():
-                  if name.endswith('/'): continue
-                  try:
-                      data = z.read(name).decode('utf-8', errors='ignore')
-                      files.append((name, data))
-                  except: pass
-          except zipfile.BadZipFile:
-              files.append(("single.txt", content.decode('utf-8', errors='ignore')))
+          data = r.json()
 
-          entries = []
-          # أنماط للبحث عن العناوين
-          pattern_rva = re.compile(r'(?:RVA|Address|Offset)\s*[:=]\s*(0x[0-9A-Fa-f]+)', re.IGNORECASE)
-          pattern_name = re.compile(r'([a-zA-Z_]\w*)\s*[;\(]')
+          # الكلمات المفتاحية للبحث عن الرموز المهمة
+          keywords = [
+              "UserSettingsManager", "VisualCue", "Table",
+              "getPositionForPocket", "showCueBallTrajectory",
+              "wideGuideline", "tapToAim", "hideGuidelinesMode",
+              "maxCuePowerOffset", "FrictionProperties",
+              "checkValidCushionShotCollision",
+              "SGMSafeGuardManager", "PAGSecManager",
+              "aimLineLength", "AimLine", "GuideLine",
+              "cueBallPosition", "pocket", "Pocket"
+          ]
 
-          for filepath, data in files:
-              for line in data.splitlines():
-                  m = pattern_rva.search(line)
-                  if not m:
-                      # محاولة البحث عن أرقام سداسية كبيرة
-                      m = re.search(r'\b(0x[0-9A-Fa-f]{4,})\b', line)
-                  if not m:
-                      continue
-                  addr = m.group(1)
-                  nm = pattern_name.search(line)
-                  name = nm.group(1) if nm else 'Unknown'
-                  entries.append({"name": name, "address": addr, "line": line.strip()})
+          found = []
+
+          # البحث في ScriptMetadata أو ScriptMethod حسب بنية script.json
+          if isinstance(data, dict):
+              # قد يكون الملف يحتوي على "ScriptMethod" أو "ScriptMetadata"
+              for section_name in ["ScriptMethod", "ScriptMetadata", "ScriptString", "ScriptTypeDefinition"]:
+                  if section_name in data:
+                      section = data[section_name]
+                      if isinstance(section, list):
+                          for item in section:
+                              name = item.get("Name", "")
+                              addr = item.get("Address", 0)
+                              if any(kw.lower() in name.lower() for kw in keywords):
+                                  found.append({
+                                      "name": name,
+                                      "address": hex(addr),
+                                      "type": "method" if section_name == "ScriptMethod" else "metadata"
+                                  })
+                      elif isinstance(section, dict):
+                          for name, addr in section.items():
+                              if any(kw.lower() in name.lower() for kw in keywords):
+                                  found.append({
+                                      "name": name,
+                                      "address": hex(addr) if isinstance(addr, int) else addr,
+                                      "type": "metadata"
+                                  })
 
           # توليد ملف header
-          lines = ['// Offsets extracted from headers', '#pragma once', '']
-          for e in entries:
-              define_name = re.sub(r'[^A-Za-z0-9_]', '_', e['name']).upper()
-              lines.append(f"// {e['line']}")
-              lines.append(f"#define {define_name}_OFFSET {e['address']}")
-              lines.append('')
-          header_content = '\n'.join(lines)
+          lines = ["// Offsets extracted from script.json", "#pragma once", ""]
+          for entry in found:
+              define_name = re.sub(r'[^A-Za-z0-9_]', '_', entry["name"]).upper()
+              lines.append(f"// {entry['name']} ({entry['type']})")
+              lines.append(f"#define {define_name}_OFFSET {entry['address']}")
+              lines.append("")
 
-          with open('extracted_offsets.h', 'w') as f:
+          header_content = "\n".join(lines)
+
+          with open("extracted_offsets.h", "w") as f:
               f.write(header_content)
 
-          # حفظ JSON للمراجعة
-          with open('extracted_offsets.json', 'w') as f:
-              json.dump(entries, f, indent=2)
+          with open("extracted_offsets.json", "w") as f:
+              json.dump(found, f, indent=2)
 
-          print(f"Extracted {len(entries)} offsets")
+          print(f"Found {len(found)} offsets")
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: offsets
+          name: real-offsets
           path: |
             extracted_offsets.h
             extracted_offsets.json

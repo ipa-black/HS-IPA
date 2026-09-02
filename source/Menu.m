@@ -1,312 +1,377 @@
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
-#import <sys/sysctl.h>
-#import <sys/syscall.h>
-#import <unistd.h>
 
-// ====================================================
-// 1. نظام الحماية المتقدم (Anti-Debugging & Anti-Tampering)
-// ====================================================
-static __inline__ __attribute__((always_inline)) void apply_military_protection() {
-    // منع ربط أي Debugger باللعبة
-    syscall(26, 31, 0, 0, 0);
-    
-    // فحص النواة (Sysctl) للتأكد من عدم وجود مراقب للذاكرة
-    int mib[4];
-    struct kinfo_proc info;
-    size_t size = sizeof(info);
-    
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC;
-    mib[2] = KERN_PROC_PID;
-    mib[3] = getpid();
-    
-    sysctl(mib, 4, &info, &size, NULL, 0);
-    
-    if (info.kp_proc.p_flag & P_TRACED) {
-        NSLog(@"[ATTACK VIP] Debugger Detected! Terminating...");
-        // انهيار متعمد للعبة لحماية الأكواد
-        int *ptr = NULL;
-        *ptr = 1; 
-        exit(0);
-    }
+// ==========================================
+// تعريف الألوان (الذهبي والزجاجي)
+// ==========================================
+#define GOLD_COLOR [UIColor colorWithRed:0.83 green:0.69 blue:0.22 alpha:1.0]
+#define GLASS_DARK [UIColor colorWithWhite:0.0 alpha:0.4]
+
+// ==========================================
+// 1. تعريف الكلاسات (Interfaces)
+// ==========================================
+@interface GBModMenu : UIView
+@end
+
+@interface CBToggle : UIButton
+@property (nonatomic, strong) UISwitch *targetSwitch;
+@property (nonatomic, strong) NSString *baseTitle;
+- (void)updateLook;
+@end
+
+// ==========================================
+// 2. برمجة زر الصح (الذهبي)
+// ==========================================
+@implementation CBToggle
+- (void)btnTapped {
+    BOOL newState = !self.targetSwitch.isOn;
+    [self.targetSwitch setOn:newState animated:YES];
+    [self.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    [self.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [self updateLook];
 }
-
-// ====================================================
-// 2. المتغيرات العامة للهاك
-// ====================================================
-static BOOL isLongLineEnabled = NO;
-
-// ====================================================
-// 3. قسم الهاك النقي (Pure Objective-C Runtime)
-// ====================================================
-// تعريف المؤشرات لحفظ الدوال الأصلية
-static BOOL (*orig_showCueBallTrajectory)(id, SEL);
-static BOOL (*orig_wideGuideline)(id, SEL);
-static BOOL (*orig_noGuidelinesOffline)(id, SEL);
-
-// الدوال البديلة (Hooks) المجهزة بحماية ضد الانهيار
-static BOOL hook_showCueBallTrajectory(id self, SEL _cmd) {
-    if (isLongLineEnabled) return YES;
-    return orig_showCueBallTrajectory ? orig_showCueBallTrajectory(self, _cmd) : NO;
-}
-
-static BOOL hook_wideGuideline(id self, SEL _cmd) {
-    if (isLongLineEnabled) return YES;
-    return orig_wideGuideline ? orig_wideGuideline(self, _cmd) : NO;
-}
-
-static BOOL hook_noGuidelinesOffline(id self, SEL _cmd) {
-    if (isLongLineEnabled) return NO;
-    return orig_noGuidelinesOffline ? orig_noGuidelinesOffline(self, _cmd) : YES;
-}
-
-// دالة مساعدة لعمل التبديل الآمن (Method Swizzling)
-static void hookMethod(Class targetClass, SEL targetSelector, void *replacement, void **original) {
-    Method method = class_getInstanceMethod(targetClass, targetSelector);
-    if (method) {
-        *original = method_setImplementation(method, (IMP)replacement);
+- (void)updateLook {
+    self.layer.cornerRadius = 10;
+    if (self.targetSwitch.isOn) {
+        [self setTitle:[NSString stringWithFormat:@"✔  %@", self.baseTitle] forState:UIControlStateNormal];
+        [self setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+        self.backgroundColor = GOLD_COLOR;
+        self.layer.borderWidth = 1.0;
+        self.layer.borderColor = GOLD_COLOR.CGColor;
     } else {
-        NSLog(@"[ATTACK VIP] لم يتم العثور على الدالة: %@", NSStringFromSelector(targetSelector));
+        [self setTitle:[NSString stringWithFormat:@"☐  %@", self.baseTitle] forState:UIControlStateNormal];
+        [self setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
+        self.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.5];
+        self.layer.borderWidth = 0.5;
+        self.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:1.0].CGColor;
     }
 }
-
-// ====================================================
-// 4. واجهة القائمة والزر العائم (تصميم ATTACK VIP العصري)
-// ====================================================
-@interface AttackVIPMenu : NSObject
-+ (void)showMenu;
-+ (void)closeMenu;
 @end
 
-@implementation AttackVIPMenu
-
-static UIView *menuContainer = nil;
-
-+ (void)showMenu {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (menuContainer) return;
+// ==========================================
+// 3. تغيير الأسماء الأصلية (Hooks)
+// ==========================================
+%hook UILabel
+- (void)setText:(NSString *)text {
+    if (text != nil && [text isKindOfClass:[NSString class]]) {
+        NSString *newText = text;
         
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject;
-                    break;
-                }
-            }
-        }
-        if (!window) window = [UIApplication sharedApplication].keyWindow;
-        if (!window) return;
+        if ([text containsString:@"i3rby Store"]) { newText = @"ipa black"; }
+        else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
+        else if ([text containsString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
+        else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
+        else if ([text isEqualToString:@"الرسوم"]) { newText = @"طريقة العرض"; }
+        else if ([text containsString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
         
-        @try {
-            menuContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 240)];
-            menuContainer.center = window.center;
-            menuContainer.layer.shadowColor = [UIColor blackColor].CGColor;
-            menuContainer.layer.shadowOffset = CGSizeMake(0, 10);
-            menuContainer.layer.shadowOpacity = 0.5;
-            menuContainer.layer.shadowRadius = 15;
-            
-            UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-            UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-            blurView.frame = menuContainer.bounds;
-            blurView.layer.cornerRadius = 20;
-            blurView.clipsToBounds = YES;
-            blurView.layer.borderWidth = 0.5;
-            blurView.layer.borderColor = [UIColor colorWithRed:0.0 green:1.0 blue:1.0 alpha:0.3].CGColor;
-            [menuContainer addSubview:blurView];
-            
-            UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, 320, 30)];
-            title.text = @"ATTACK VIP";
-            title.textColor = [UIColor whiteColor];
-            title.textAlignment = NSTextAlignmentCenter;
-            title.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            title.layer.shadowColor = [UIColor cyanColor].CGColor;
-            title.layer.shadowRadius = 5.0;
-            title.layer.shadowOpacity = 0.8;
-            title.layer.shadowOffset = CGSizeZero;
-            [menuContainer addSubview:title];
-            
-            UILabel *subTitle = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, 320, 20)];
-            subTitle.text = @"8 Ball Pool Pro Features";
-            subTitle.textColor = [UIColor colorWithWhite:0.8 alpha:1.0];
-            subTitle.textAlignment = NSTextAlignmentCenter;
-            subTitle.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-            [menuContainer addSubview:subTitle];
-            
-            UIView *separator = [[UIView alloc] initWithFrame:CGRectMake(30, 85, 260, 1)];
-            separator.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.1];
-            [menuContainer addSubview:separator];
-            
-            UIView *featureCell = [[UIView alloc] initWithFrame:CGRectMake(20, 100, 280, 55)];
-            featureCell.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.08];
-            featureCell.layer.cornerRadius = 12;
-            [menuContainer addSubview:featureCell];
-            
-            UILabel *lblLongLine = [[UILabel alloc] initWithFrame:CGRectMake(15, 0, 150, 55)];
-            lblLongLine.text = @"مسار الكرة الطويل";
-            lblLongLine.textColor = [UIColor whiteColor];
-            lblLongLine.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
-            [featureCell addSubview:lblLongLine];
-            
-            UISwitch *toggleLongLine = [[UISwitch alloc] initWithFrame:CGRectMake(215, 12.5, 50, 30)];
-            toggleLongLine.onTintColor = [UIColor colorWithRed:0.0 green:0.8 blue:1.0 alpha:1.0];
-            toggleLongLine.on = isLongLineEnabled;
-            toggleLongLine.transform = CGAffineTransformMakeScale(0.85, 0.85);
-            [toggleLongLine addTarget:self action:@selector(toggleLongLineAction:) forControlEvents:UIControlEventValueChanged];
-            [featureCell addSubview:toggleLongLine];
-            
-            UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-            closeBtn.frame = CGRectMake(20, 175, 280, 45);
-            [closeBtn setTitle:@"إخفاء القائمة" forState:UIControlStateNormal];
-            closeBtn.backgroundColor = [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:0.8];
-            [closeBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-            closeBtn.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
-            closeBtn.layer.cornerRadius = 12;
-            [closeBtn addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
-            [menuContainer addSubview:closeBtn];
-            
-            [window addSubview:menuContainer];
-            
-            menuContainer.transform = CGAffineTransformMakeScale(0.7, 0.7);
-            menuContainer.alpha = 0;
-            [UIView animateWithDuration:0.5 delay:0.0 usingSpringWithDamping:0.7 initialSpringVelocity:0.5 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-                menuContainer.transform = CGAffineTransformIdentity;
-                menuContainer.alpha = 1;
-            } completion:nil];
-            
-        } @catch (NSException *exception) {
-            NSLog(@"[ATTACK VIP] خطأ في رسم القائمة: %@", exception.reason);
-        }
-    });
+        %orig(newText);
+    } else {
+        %orig(text);
+    }
 }
+%end
 
-+ (void)toggleLongLineAction:(UISwitch *)sender {
-    isLongLineEnabled = sender.isOn;
-    UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
-    [feedback impactOccurred];
-}
-
-+ (void)closeMenu {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [UIView animateWithDuration:0.3 delay:0.0 options:UIViewAnimationOptionCurveEaseIn animations:^{
-            menuContainer.transform = CGAffineTransformMakeScale(0.8, 0.8);
-            menuContainer.alpha = 0;
-        } completion:^(BOOL finished) {
-            [menuContainer removeFromSuperview];
-            menuContainer = nil;
-        }];
-    });
-}
-
-@end
-
-// ====================================================
-// 5. دالة تحريك الزر العائم
-// ====================================================
-@implementation UIButton (Draggable)
-- (void)panAction:(UIPanGestureRecognizer *)pan {
-    CGPoint translation = [pan translationInView:self.superview];
-    self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
-    [pan setTranslation:CGPointZero inView:self.superview];
+// ==========================================
+// 4. محرك البناء والخطف الدقيق
+// ==========================================
+static UILabel* findLabel(UIView *root, NSString *searchText) {
+    if (root.tag == 7777 || root.tag == 9999) return nil; 
     
-    if (pan.state == UIGestureRecognizerStateEnded) {
-        [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
-            self.transform = CGAffineTransformIdentity;
-        } completion:nil];
-    } else if (pan.state == UIGestureRecognizerStateBegan) {
-        [UIView animateWithDuration:0.2 animations:^{
-            self.transform = CGAffineTransformMakeScale(1.1, 1.1);
-        }];
+    if ([root isKindOfClass:[UILabel class]]) {
+        if ([[(UILabel *)root text] containsString:searchText]) return (UILabel *)root;
     }
+    for (UIView *sub in root.subviews) {
+        UILabel *found = findLabel(sub, searchText);
+        if (found) return found;
+    }
+    return nil;
 }
-@end
 
-// ====================================================
-// 6. بناء الزر العائم الأساسي
-// ====================================================
-static void setupFloatingButton() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        @try {
-            UIWindow *window = nil;
-            if (@available(iOS 13.0, *)) {
-                for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                    if (scene.activationState == UISceneActivationStateForegroundActive) {
-                        window = scene.windows.firstObject;
-                        break;
+static UIView* getRowForLabel(UILabel *lbl) {
+    UIView *parent = lbl.superview;
+    if (parent && parent.bounds.size.height >= 20 && parent.bounds.size.height <= 90) return parent;
+    if (parent.superview && parent.superview.bounds.size.height >= 20 && parent.superview.bounds.size.height <= 90) return parent.superview;
+    return parent;
+}
+
+static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, CGFloat *offset) {
+    row.tag = 9999;
+    [row removeFromSuperview];
+    
+    [row removeConstraints:row.constraints];
+    row.translatesAutoresizingMaskIntoConstraints = YES;
+    
+    CGFloat h = row.bounds.size.height;
+    if (h < 30 || h > 90) h = 50; 
+    
+    // تم زيادة عرض الزر ليتناسب مع الواجهة العريضة (690 بدلاً من 560)
+    row.frame = CGRectMake(10, *offset, 690, h);
+    row.backgroundColor = [UIColor clearColor];
+    
+    UISwitch *sw = nil;
+    UISlider *sl = nil;
+    UISegmentedControl *seg = nil;
+    UILabel *txt = nil;
+    
+    for (UIView *v in row.subviews) {
+        if ([v isKindOfClass:[UISwitch class]]) sw = (UISwitch *)v;
+        else if ([v isKindOfClass:[UISlider class]]) sl = (UISlider *)v;
+        else if ([v isKindOfClass:[UISegmentedControl class]]) seg = (UISegmentedControl *)v;
+        else if ([v isKindOfClass:[UILabel class]]) txt = (UILabel *)v;
+    }
+    
+    if (sw && txt) {
+        sw.alpha = 0.0; 
+        txt.alpha = 0.0; 
+        
+        CBToggle *btn = [CBToggle buttonWithType:UIButtonTypeCustom];
+        btn.frame = CGRectMake(0, 0, 690, h);
+        btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+        btn.titleEdgeInsets = UIEdgeInsetsMake(0, 15, 0, 0);
+        btn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+        btn.baseTitle = targetName;
+        btn.targetSwitch = sw;
+        
+        [btn addTarget:btn action:@selector(btnTapped) forControlEvents:UIControlEventTouchUpInside];
+        [btn updateLook]; 
+        
+        [row addSubview:btn];
+    } else {
+        if (txt) { txt.textColor = [UIColor whiteColor]; txt.font = [UIFont boldSystemFontOfSize:15]; }
+        if (sl) { sl.minimumTrackTintColor = GOLD_COLOR; sl.thumbTintColor = GOLD_COLOR; }
+        if (seg) {
+            if (@available(iOS 13.0, *)) seg.selectedSegmentTintColor = GOLD_COLOR;
+            else seg.tintColor = GOLD_COLOR;
+            [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]} forState:UIControlStateSelected];
+            [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateNormal];
+        }
+    }
+    
+    [scroll addSubview:row];
+    *offset += h + 12; 
+    scroll.contentSize = CGSizeMake(710, *offset + 20); 
+}
+
+// دالة تغيير الزر العائم الخارجي (Floating Button)
+static void changeFloatingButtonImage(UIImage *img) {
+    if (!img) return;
+    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    for (UIView *view in window.subviews) {
+        if (view.frame.size.width >= 35 && view.frame.size.width <= 80 && view.frame.size.height == view.frame.size.width) {
+            if (view.gestureRecognizers.count > 0) {
+                for (UIView *sub in view.subviews) {
+                    if ([sub isKindOfClass:[UIImageView class]]) {
+                        [(UIImageView *)sub setImage:img];
+                        view.layer.cornerRadius = view.frame.size.width / 2.0;
+                        view.layer.masksToBounds = YES;
+                        view.layer.borderWidth = 1.5;
+                        view.layer.borderColor = GOLD_COLOR.CGColor;
                     }
                 }
+                if ([view isKindOfClass:[UIButton class]]) {
+                    [(UIButton *)view setBackgroundImage:img forState:UIControlStateNormal];
+                    [(UIButton *)view setImage:nil forState:UIControlStateNormal];
+                    view.layer.cornerRadius = view.frame.size.width / 2.0;
+                    view.layer.masksToBounds = YES;
+                    view.layer.borderWidth = 1.5;
+                    view.layer.borderColor = GOLD_COLOR.CGColor;
+                }
             }
-            if (!window) window = [UIApplication sharedApplication].keyWindow;
-            
-            if (!window) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    setupFloatingButton();
-                });
-                return;
-            }
-            
-            UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-            floatingBtn.frame = CGRectMake(20, 100, 55, 55);
-            floatingBtn.layer.cornerRadius = 27.5;
-            floatingBtn.layer.shadowColor = [UIColor cyanColor].CGColor;
-            floatingBtn.layer.shadowOffset = CGSizeMake(0, 4);
-            floatingBtn.layer.shadowOpacity = 0.6;
-            floatingBtn.layer.shadowRadius = 8;
-            
-            UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-            UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-            blurView.frame = floatingBtn.bounds;
-            blurView.layer.cornerRadius = 27.5;
-            blurView.clipsToBounds = YES;
-            blurView.userInteractionEnabled = NO;
-            [floatingBtn insertSubview:blurView atIndex:0];
-            
-            floatingBtn.layer.borderWidth = 1.0;
-            floatingBtn.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.2].CGColor;
-            
-            [floatingBtn setTitle:@"ATK" forState:UIControlStateNormal];
-            [floatingBtn setTitleColor:[UIColor cyanColor] forState:UIControlStateNormal];
-            floatingBtn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBlack];
-            
-            [floatingBtn addTarget:[AttackVIPMenu class] action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
-            
-            UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:floatingBtn action:@selector(panAction:)];
-            [floatingBtn addGestureRecognizer:pan];
-            
-            [window addSubview:floatingBtn];
-        } @catch (NSException *exception) {
-            NSLog(@"[ATTACK VIP] خطأ في رسم الزر: %@", exception.reason);
         }
+    }
+}
+
+static CGFloat tabOffset0 = 10, tabOffset1 = 10, tabOffset2 = 10;
+static int radarAttempts = 0; 
+
+static void continuousRadar(UIView *mainMenu, UIView *ipablackUI) {
+    if (radarAttempts > 20) return; 
+    radarAttempts++;
+
+    UIScrollView *t0 = (UIScrollView *)[ipablackUI viewWithTag:8000];
+    UIScrollView *t1 = (UIScrollView *)[ipablackUI viewWithTag:8001];
+    UIScrollView *t2 = (UIScrollView *)[ipablackUI viewWithTag:8002];
+    
+    NSArray *targets0 = @[@"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"حماية البث"];
+    NSArray *targets1 = @[@"طريقة العرض", @"إزاحة Y", @"إزاحة X", @"مقياس X", @"مقياس Y", @"سمك الخط", @"شفافية الخط", @"نقطة النهاية", @"حلقة الجيب", @"توقع الضربه القويه"];
+    NSArray *targets2 = @[@"زر الاختصار", @"إيقاف عند اللمس", @"نمط دوران", @"وضع التصويب", @"أسلوب اللعب", @"مستوى اللعب", @"وضع الكسر", @"قوة التصويب", @"سرعة تصويب"];
+    
+    if (t0) {
+        for (NSString *name in targets0) {
+            UILabel *lbl = findLabel(mainMenu, name);
+            if (lbl) hijackRow(getRowForLabel(lbl), name, t0, &tabOffset0);
+        }
+    }
+    if (t1) {
+        for (NSString *name in targets1) {
+            UILabel *lbl = findLabel(mainMenu, name);
+            if (lbl) hijackRow(getRowForLabel(lbl), name, t1, &tabOffset1);
+        }
+    }
+    if (t2) {
+        for (NSString *name in targets2) {
+            UILabel *lbl = findLabel(mainMenu, name);
+            if (lbl) hijackRow(getRowForLabel(lbl), name, t2, &tabOffset2);
+        }
+    }
+    
+    for (UIView *sub in mainMenu.subviews) {
+        if (sub.tag != 7777) { 
+            sub.alpha = 0.01; 
+            sub.userInteractionEnabled = NO; 
+        }
+    }
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        continuousRadar(mainMenu, ipablackUI);
     });
 }
 
-// ====================================================
-// 7. نقطة الانطلاق الأساسية للتطبيق (Constructor)
-// ====================================================
-static void __attribute__((constructor)) ATTACK_VIP_INIT() {
-    
-    // 1. تشغيل الحماية فوراً قبل أي شيء
-    apply_military_protection();
-    
-    // 2. تطبيق الهاك (Method Swizzling) بمجرد بدء اللعبة
-    Class targetClass = objc_getClass("UserSettingsManager");
-    if (targetClass) {
-        hookMethod(targetClass, NSSelectorFromString(@"showCueBallTrajectory"), (void *)hook_showCueBallTrajectory, (void **)&orig_showCueBallTrajectory);
-        hookMethod(targetClass, NSSelectorFromString(@"wideGuideline"), (void *)hook_wideGuideline, (void **)&orig_wideGuideline);
-        hookMethod(targetClass, NSSelectorFromString(@"noGuidelinesOffline"), (void *)hook_noGuidelinesOffline, (void **)&orig_noGuidelinesOffline);
-        NSLog(@"[ATTACK VIP] تم حقن أكواد الخطوط بنجاح!");
-    } else {
-        NSLog(@"[ATTACK VIP] فشل في العثور على كلاس UserSettingsManager");
-    }
+// ==========================================
+// 5. بناء واجهة المنيو الرئيسية (عريضة - Landscape)
+// ==========================================
+%hook GBModMenu
 
-    // 3. تفعيل واجهة المستخدم عند اكتمال التحميل
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification * _Nonnull note) {
-        static dispatch_once_t onceToken;
-        dispatch_once(&onceToken, ^{
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                setupFloatingButton();
-            });
-        });
-    }];
+%new
+- (void)ipablackTabChanged:(UISegmentedControl *)sender {
+    UIView *ipablackUI = [self viewWithTag:7777];
+    for (int i = 0; i < 4; i++) {
+        UIView *container = [ipablackUI viewWithTag:8000 + i];
+        container.hidden = (i != sender.selectedSegmentIndex);
+    }
 }
+
+%new
+- (void)ipablackOpenChannel {
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://t.me/hl00ss"] options:@{} completionHandler:nil];
+}
+
+%new
+- (void)ipablackOpenDev {
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://t.me/ipa_black"] options:@{} completionHandler:nil];
+}
+
+- (void)layoutSubviews {
+    %orig;
+    
+    UIView *mainMenu = (UIView *)self;
+    
+    // تم تحويل الأبعاد لتكون بالعرض الشديد (Panoramic)
+    CGRect newBounds = mainMenu.bounds;
+    newBounds.size.width = 750;  // عرض كبير
+    newBounds.size.height = 380; // ارتفاع أنسب
+    mainMenu.bounds = newBounds;
+    mainMenu.backgroundColor = [UIColor clearColor]; 
+    mainMenu.layer.borderWidth = 0;
+    
+    UIView *ipablackUI = [mainMenu viewWithTag:7777];
+    if (!ipablackUI) {
+        // الحاوية الشفافة بالأبعاد العريضة الجديدة
+        ipablackUI = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 750, 380)];
+        ipablackUI.tag = 7777;
+        ipablackUI.backgroundColor = [UIColor clearColor]; 
+        ipablackUI.layer.cornerRadius = 15.0;
+        ipablackUI.layer.borderColor = GOLD_COLOR.CGColor;
+        ipablackUI.layer.borderWidth = 1.5;
+        ipablackUI.layer.shadowColor = GOLD_COLOR.CGColor;
+        ipablackUI.layer.shadowRadius = 15.0;
+        ipablackUI.layer.shadowOpacity = 0.5;
+        
+        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        UIVisualEffectView *blurEffectView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+        blurEffectView.frame = ipablackUI.bounds;
+        blurEffectView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        blurEffectView.layer.cornerRadius = 15.0;
+        blurEffectView.clipsToBounds = YES;
+        [ipablackUI addSubview:blurEffectView];
+        
+        [mainMenu addSubview:ipablackUI];
+        
+        // الأقسام (Tabs) متمددة لتغطي العرض الجديد
+        UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"طريقة العرض", @"اللعب التلقائي", @"الإعدادات"]];
+        tabs.frame = CGRectMake(20, 15, 710, 45); // العرض أصبح 710
+        tabs.selectedSegmentIndex = 0; 
+        [tabs addTarget:self action:@selector(ipablackTabChanged:) forControlEvents:UIControlEventValueChanged];
+        
+        if (@available(iOS 13.0, *)) {
+            tabs.selectedSegmentTintColor = GOLD_COLOR;
+        } else {
+            tabs.tintColor = GOLD_COLOR;
+        }
+        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor], NSFontAttributeName: [UIFont systemFontOfSize:14 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
+        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:14]} forState:UIControlStateSelected];
+        [ipablackUI addSubview:tabs];
+        
+        for (int i = 0; i < 4; i++) {
+            // توسيع نافذة التمرير للأزرار
+            UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 75, 710, 290)];
+            scrollView.tag = 8000 + i; 
+            scrollView.backgroundColor = [UIColor clearColor]; 
+            scrollView.showsVerticalScrollIndicator = NO; 
+            scrollView.alwaysBounceVertical = YES; 
+            scrollView.hidden = (i != 0);
+            [ipablackUI addSubview:scrollView];
+        }
+        
+        // --- قسم الإعدادات بتوسيط مثالي ---
+        UIScrollView *tab3 = (UIScrollView *)[ipablackUI viewWithTag:8003];
+        
+        // توسيط الصورة بناءً على العرض الجديد (710 / 2 - 50 = 305)
+        UIButton *profilePicBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        profilePicBtn.frame = CGRectMake(305, 15, 100, 100);
+        profilePicBtn.layer.cornerRadius = 50;
+        profilePicBtn.layer.masksToBounds = YES;
+        profilePicBtn.layer.borderWidth = 2.0;
+        profilePicBtn.layer.borderColor = GOLD_COLOR.CGColor;
+        [profilePicBtn addTarget:self action:@selector(ipablackOpenChannel) forControlEvents:UIControlEventTouchUpInside];
+        [tab3 addSubview:profilePicBtn];
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/09/178838170433251.jpeg"]];
+            if (imgData) {
+                UIImage *downloadedImg = [UIImage imageWithData:imgData];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [profilePicBtn setBackgroundImage:downloadedImg forState:UIControlStateNormal];
+                    changeFloatingButtonImage(downloadedImg);
+                });
+            }
+        });
+        
+        // توسيط النص
+        UILabel *nameLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 125, 710, 30)];
+        nameLabel.text = @"ipa black Premium";
+        nameLabel.textColor = GOLD_COLOR;
+        nameLabel.font = [UIFont boldSystemFontOfSize:24];
+        nameLabel.textAlignment = NSTextAlignmentCenter;
+        [tab3 addSubview:nameLabel];
+        
+        // توسيط أزرار التواصل بناءً على العرض الجديد (710 / 2 - 125 = 230)
+        UIButton *btnChannel = [UIButton buttonWithType:UIButtonTypeCustom];
+        btnChannel.frame = CGRectMake(230, 175, 250, 45);
+        [btnChannel setTitle:@"قناة التيليجرام" forState:UIControlStateNormal];
+        [btnChannel setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+        btnChannel.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+        btnChannel.backgroundColor = GOLD_COLOR;
+        btnChannel.layer.cornerRadius = 10;
+        [btnChannel addTarget:self action:@selector(ipablackOpenChannel) forControlEvents:UIControlEventTouchUpInside];
+        [tab3 addSubview:btnChannel];
+        
+        UIButton *btnDev = [UIButton buttonWithType:UIButtonTypeCustom];
+        btnDev.frame = CGRectMake(230, 235, 250, 45);
+        [btnDev setTitle:@"التواصل مع المطور" forState:UIControlStateNormal];
+        [btnDev setTitleColor:GOLD_COLOR forState:UIControlStateNormal];
+        btnDev.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+        btnDev.backgroundColor = GLASS_DARK; 
+        btnDev.layer.borderColor = GOLD_COLOR.CGColor;
+        btnDev.layer.borderWidth = 1.5;
+        btnDev.layer.cornerRadius = 10;
+        [btnDev addTarget:self action:@selector(ipablackOpenDev) forControlEvents:UIControlEventTouchUpInside];
+        [tab3 addSubview:btnDev];
+        
+        tab3.contentSize = CGSizeMake(710, 310);
+        
+        radarAttempts = 0; 
+        continuousRadar(mainMenu, ipablackUI);
+    }
+    
+    [mainMenu bringSubviewToFront:ipablackUI];
+}
+%end

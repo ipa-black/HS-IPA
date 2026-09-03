@@ -3,14 +3,14 @@
 #import <sys/types.h>
 
 // ==========================================
-// حماية قوية: منع ربط أدوات الفحص (Anti-Debugging)
+// حماية المود (Anti-Debugging)
 // ==========================================
 static __attribute__((constructor)) void anti_debug_protection() {
     void *handle = dlopen(0, RTLD_GLOBAL | RTLD_NOW);
     typedef int (*ptrace_ptr_t)(int _request, pid_t _pid, caddr_t _addr, int _data);
     ptrace_ptr_t ptrace_ptr = (ptrace_ptr_t)dlsym(handle, "ptrace");
     if (ptrace_ptr) {
-        ptrace_ptr(31, 0, 0, 0); // PT_DENY_ATTACH
+        ptrace_ptr(31, 0, 0, 0);
     }
 }
 
@@ -24,7 +24,7 @@ static __attribute__((constructor)) void anti_debug_protection() {
 @end
 
 @interface CBToggle : UIButton
-@property (nonatomic, strong) UISwitch *targetSwitch;
+@property (nonatomic, weak) UISwitch *targetSwitch; 
 @property (nonatomic, strong) NSString *baseTitle;
 - (void)updateLook;
 @end
@@ -34,13 +34,20 @@ static __attribute__((constructor)) void anti_debug_protection() {
 // ==========================================
 @implementation CBToggle
 - (void)btnTapped {
-    BOOL newState = !self.targetSwitch.isOn;
-    [self.targetSwitch setOn:newState animated:YES];
-    [self.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
-    [self.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
-    [self updateLook];
+    if (!self.targetSwitch) return;
+    
+    // تنفيذ الأوامر على الخط الرئيسي لتفادي كراش الواجهة
+    dispatch_async(dispatch_get_main_queue(), ^{
+        BOOL newState = !self.targetSwitch.isOn;
+        [self.targetSwitch setOn:newState animated:YES];
+        [self.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+        [self.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
+        [self updateLook];
+    });
 }
 - (void)updateLook {
+    if (!self.targetSwitch) return;
+    
     UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
     
     if (self.targetSwitch.isOn) {
@@ -64,18 +71,20 @@ static __attribute__((constructor)) void anti_debug_protection() {
 // ==========================================
 %hook UILabel
 - (void)setText:(NSString *)text {
-    if (text != nil && [text isKindOfClass:[NSString class]]) {
-        NSString *newText = text;
-        
-        if ([text containsString:@"i3rby Store"]) { newText = @"IPA BLACK"; }
-        else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
-        else if ([text containsString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
-        else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
-        else if ([text isEqualToString:@"الرسوم"]) { newText = @"طريقة العرض"; }
-        else if ([text containsString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
-        
-        %orig(newText);
-    } else {
+    @try {
+        if (text != nil && [text isKindOfClass:[NSString class]]) {
+            NSString *newText = text;
+            if ([text containsString:@"i3rby Store"]) { newText = @"IPA BLACK"; }
+            else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
+            else if ([text containsString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
+            else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
+            else if ([text isEqualToString:@"الرسوم"]) { newText = @"طريقة العرض"; }
+            else if ([text containsString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
+            %orig(newText);
+        } else {
+            %orig(text);
+        }
+    } @catch (NSException *exception) {
         %orig(text);
     }
 }
@@ -85,6 +94,7 @@ static __attribute__((constructor)) void anti_debug_protection() {
 // 4. محرك البناء والخطف الدقيق (C-Functions)
 // ==========================================
 static UILabel* findLabel(UIView *root, NSString *searchText) {
+    if (!root) return nil;
     if (root.tag == 7777 || root.tag == 9999) return nil; 
     
     if ([root isKindOfClass:[UILabel class]]) {
@@ -105,68 +115,76 @@ static UIView* getRowForLabel(UILabel *lbl) {
 }
 
 static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, CGFloat *offset) {
-    row.tag = 9999;
-    [row removeFromSuperview];
+    if (!row || !scroll) return;
     
-    [row removeConstraints:row.constraints];
-    row.translatesAutoresizingMaskIntoConstraints = YES;
-    
-    CGFloat h = row.bounds.size.height;
-    if (h < 30 || h > 90) h = 50; 
-    
-    row.frame = CGRectMake(10, *offset, 560, h);
-    row.backgroundColor = [UIColor clearColor];
-    
-    UISwitch *sw = nil;
-    UISlider *sl = nil;
-    UISegmentedControl *seg = nil;
-    UILabel *txt = nil;
-    
-    for (UIView *v in row.subviews) {
-        if ([v isKindOfClass:[UISwitch class]]) sw = (UISwitch *)v;
-        else if ([v isKindOfClass:[UISlider class]]) sl = (UISlider *)v;
-        else if ([v isKindOfClass:[UISegmentedControl class]]) seg = (UISegmentedControl *)v;
-        else if ([v isKindOfClass:[UILabel class]]) txt = (UILabel *)v;
-    }
-    
-    if (sw && txt) {
-        sw.alpha = 0.0; 
-        txt.alpha = 0.0; 
+    // تنفيذ التعديلات الهندسية في الخط الرئيسي لتفادي الشاشة السوداء
+    dispatch_async(dispatch_get_main_queue(), ^{
+        row.tag = 9999;
         
-        CBToggle *btn = [CBToggle buttonWithType:UIButtonTypeCustom];
-        btn.frame = CGRectMake(0, 0, 560, h);
-        btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-        btn.titleEdgeInsets = UIEdgeInsetsMake(0, 15, 0, 0);
-        btn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
-        btn.layer.cornerRadius = 10;
-        btn.baseTitle = targetName;
-        btn.targetSwitch = sw;
+        // [حل مشكلة الشاشة السوداء]: التعامل بحذر مع القيود
+        @try {
+            [row removeFromSuperview];
+            row.translatesAutoresizingMaskIntoConstraints = YES;
+        } @catch (NSException *e) {}
         
-        [btn addTarget:btn action:@selector(btnTapped) forControlEvents:UIControlEventTouchUpInside];
-        [btn updateLook]; 
+        CGFloat h = row.bounds.size.height;
+        if (h < 30 || h > 90) h = 50; 
         
-        [row addSubview:btn];
-    } else {
-        UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+        row.frame = CGRectMake(10, *offset, 560, h);
+        row.backgroundColor = [UIColor clearColor];
         
-        if (txt) { txt.textColor = [UIColor whiteColor]; txt.font = [UIFont boldSystemFontOfSize:15]; }
-        if (sl) { sl.minimumTrackTintColor = goldColor; sl.thumbTintColor = goldColor; }
-        if (seg) {
-            if (@available(iOS 13.0, *)) seg.selectedSegmentTintColor = goldColor;
-            else seg.tintColor = goldColor;
-            [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateNormal];
-            [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]} forState:UIControlStateSelected];
+        UISwitch *sw = nil;
+        UISlider *sl = nil;
+        UISegmentedControl *seg = nil;
+        UILabel *txt = nil;
+        
+        for (UIView *v in row.subviews) {
+            if ([v isKindOfClass:[UISwitch class]]) sw = (UISwitch *)v;
+            else if ([v isKindOfClass:[UISlider class]]) sl = (UISlider *)v;
+            else if ([v isKindOfClass:[UISegmentedControl class]]) seg = (UISegmentedControl *)v;
+            else if ([v isKindOfClass:[UILabel class]]) txt = (UILabel *)v;
         }
-    }
-    
-    [scroll addSubview:row];
-    *offset += h + 15; 
-    scroll.contentSize = CGSizeMake(580, *offset + 20); 
+        
+        if (sw && txt) {
+            sw.alpha = 0.0; 
+            txt.alpha = 0.0; 
+            
+            CBToggle *btn = [CBToggle buttonWithType:UIButtonTypeCustom];
+            btn.frame = CGRectMake(0, 0, 560, h);
+            btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+            btn.titleEdgeInsets = UIEdgeInsetsMake(0, 15, 0, 0);
+            btn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+            btn.layer.cornerRadius = 10;
+            btn.baseTitle = targetName;
+            btn.targetSwitch = sw;
+            
+            [btn addTarget:btn action:@selector(btnTapped) forControlEvents:UIControlEventTouchUpInside];
+            [btn updateLook]; 
+            
+            [row addSubview:btn];
+        } else {
+            UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+            if (txt) { txt.textColor = [UIColor whiteColor]; txt.font = [UIFont boldSystemFontOfSize:15]; }
+            if (sl) { sl.minimumTrackTintColor = goldColor; sl.thumbTintColor = goldColor; }
+            if (seg) {
+                if (@available(iOS 13.0, *)) seg.selectedSegmentTintColor = goldColor;
+                else seg.tintColor = goldColor;
+                [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateNormal];
+                [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]} forState:UIControlStateSelected];
+            }
+        }
+        
+        [scroll addSubview:row];
+        *offset += h + 15; 
+        scroll.contentSize = CGSizeMake(580, *offset + 20); 
+    });
 }
 
 static CGFloat tabOffset0 = 10, tabOffset1 = 10, tabOffset2 = 10;
 
-static void continuousRadar(UIView *mainMenu, UIView *ipaBlackUI) {
+static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
+    if (!mainMenu || !ipaBlackUI) return; 
+    
     UIScrollView *t0 = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
     UIScrollView *t1 = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
     UIScrollView *t2 = (UIScrollView *)[ipaBlackUI viewWithTag:8002];
@@ -194,24 +212,22 @@ static void continuousRadar(UIView *mainMenu, UIView *ipaBlackUI) {
         }
     }
     
-    for (UIView *sub in mainMenu.subviews) {
-        if (sub.tag != 7777) { 
-            sub.alpha = 0.01; 
-            sub.userInteractionEnabled = NO; 
-        }
-    }
+    // [تمت إزالة كود الإخفاء sub.alpha = 0.01 لأنه يسبب إخفاء اللعبة بالكامل (شاشة سوداء)]
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         continuousRadar(mainMenu, ipaBlackUI);
     });
 }
 
 // ==========================================
-// 5. دالة التشفير المستقلة (حل مشكلة البناء)
+// 5. دالة التشفير المستقلة
 // ==========================================
 static NSString* decodeBase64(NSString *encoded) {
+    if (!encoded) return @""; 
     NSData *data = [[NSData alloc] initWithBase64EncodedString:encoded options:0];
-    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (!data) return @"";
+    NSString *decoded = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return decoded ? decoded : @"";
 }
 
 // ==========================================
@@ -231,24 +247,33 @@ static NSString* decodeBase64(NSString *encoded) {
 %new
 - (void)openChannel {
     NSString *url = decodeBase64(@"aHR0cHM6Ly90Lm1lL2hsMDBzcw=="); 
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
+    if (url.length > 0) {
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
+    }
 }
 
 %new
 - (void)openDev {
     NSString *url = decodeBase64(@"aHR0cHM6Ly90Lm1lL2lwYV9ibGFjaw==");
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
+    if (url.length > 0) {
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
+    }
 }
 
 - (void)layoutSubviews {
     %orig;
     
+    if (![self isKindOfClass:[UIView class]]) return;
     UIView *mainMenu = (UIView *)self;
     
-    CGRect newBounds = mainMenu.bounds;
-    newBounds.size.width = 620;  
-    newBounds.size.height = 400; 
-    mainMenu.bounds = newBounds;
+    // [حل مشكلة الشاشة السوداء العظمى]: منع التكرار اللانهائي عند تغيير حجم الواجهة
+    if (mainMenu.bounds.size.width != 620 || mainMenu.bounds.size.height != 400) {
+        CGRect newBounds = mainMenu.bounds;
+        newBounds.size.width = 620;  
+        newBounds.size.height = 400; 
+        mainMenu.bounds = newBounds;
+    }
+    
     mainMenu.backgroundColor = [UIColor clearColor]; 
     mainMenu.layer.borderWidth = 0;
     
@@ -310,12 +335,19 @@ static NSString* decodeBase64(NSString *encoded) {
         profilePic.layer.borderColor = goldColor.CGColor;
         [tab3 addSubview:profilePic];
         
+        __weak UIImageView *weakProfilePic = profilePic;
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"]];
+            NSURL *url = [NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"];
+            NSData *imgData = [NSData dataWithContentsOfURL:url];
             if (imgData) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    profilePic.image = [UIImage imageWithData:imgData];
-                });
+                UIImage *img = [UIImage imageWithData:imgData];
+                if (img) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (weakProfilePic) {
+                            weakProfilePic.image = img;
+                        }
+                    });
+                }
             }
         });
         
@@ -351,6 +383,9 @@ static NSString* decodeBase64(NSString *encoded) {
         continuousRadar(mainMenu, ipaBlackUI);
     }
     
-    [mainMenu bringSubviewToFront:ipaBlackUI];
+    // [حل مشكلة الشاشة السوداء]: جلب الواجهة للأمام فقط إذا لم تكن كذلك لمنع دورة تحديثات الواجهة
+    if (mainMenu.subviews.lastObject != ipaBlackUI) {
+        [mainMenu bringSubviewToFront:ipaBlackUI];
+    }
 }
 %end

@@ -18,7 +18,6 @@ static __attribute__((constructor)) void anti_debug_protection() {
 // 1. تعريف الكلاسات (Interfaces)
 // ==========================================
 @interface GBModMenu : UIView
-// أزلنا تعريف الدالة من هنا لكي لا تسبب مشاكل
 - (void)tabChanged:(UISegmentedControl *)sender;
 - (void)openChannel;
 - (void)openDev;
@@ -231,7 +230,6 @@ static NSString* decodeBase64(NSString *encoded) {
 
 %new
 - (void)openChannel {
-    // استدعاء الدالة المستقلة لتجنب أي أخطاء من المترجم
     NSString *url = decodeBase64(@"aHR0cHM6Ly90Lm1lL2hsMDBzcw=="); 
     [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
 }

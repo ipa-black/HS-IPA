@@ -18,9 +18,12 @@ static __attribute__((constructor)) void anti_debug_protection() {
 // 1. تعريف الكلاسات (Interfaces)
 // ==========================================
 @interface GBModMenu : UIView
+// أزلنا تعريف الدالة من هنا لكي لا تسبب مشاكل
+- (void)tabChanged:(UISegmentedControl *)sender;
+- (void)openChannel;
+- (void)openDev;
 @end
 
-// تم إرجاع الكلاس لاسم الأصلي كما طلبت
 @interface CBToggle : UIButton
 @property (nonatomic, strong) UISwitch *targetSwitch;
 @property (nonatomic, strong) NSString *baseTitle;
@@ -44,14 +47,12 @@ static __attribute__((constructor)) void anti_debug_protection() {
     if (self.targetSwitch.isOn) {
         [self setTitle:[NSString stringWithFormat:@"✔  %@", self.baseTitle] forState:UIControlStateNormal];
         [self setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-        // خلفية ذهبية زجاجية
         self.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.85];
         self.layer.borderWidth = 1.0;
         self.layer.borderColor = goldColor.CGColor;
     } else {
         [self setTitle:[NSString stringWithFormat:@"☐  %@", self.baseTitle] forState:UIControlStateNormal];
         [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        // خلفية سوداء زجاجية
         self.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.4];
         self.layer.borderWidth = 1.0;
         self.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:0.5].CGColor;
@@ -83,7 +84,6 @@ static __attribute__((constructor)) void anti_debug_protection() {
 
 // ==========================================
 // 4. محرك البناء والخطف الدقيق (C-Functions)
-// تم إرجاع جميع الدوال لاسمها الأصلي
 // ==========================================
 static UILabel* findLabel(UIView *root, NSString *searchText) {
     if (root.tag == 7777 || root.tag == 9999) return nil; 
@@ -208,7 +208,15 @@ static void continuousRadar(UIView *mainMenu, UIView *ipaBlackUI) {
 }
 
 // ==========================================
-// 5. بناء واجهة المنيو الرئيسية
+// 5. دالة التشفير المستقلة (حل مشكلة البناء)
+// ==========================================
+static NSString* decodeBase64(NSString *encoded) {
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:encoded options:0];
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+
+// ==========================================
+// 6. بناء واجهة المنيو الرئيسية
 // ==========================================
 %hook GBModMenu
 
@@ -221,24 +229,16 @@ static void continuousRadar(UIView *mainMenu, UIView *ipaBlackUI) {
     }
 }
 
-// نظام تشفير الروابط للحماية من اكتشافها
-%new
-- (NSString *)decodeLink:(NSString *)encoded {
-    NSData *data = [[NSData alloc] initWithBase64EncodedString:encoded options:0];
-    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-}
-
 %new
 - (void)openChannel {
-    // الرابط مشفر: https://t.me/hl00ss
-    NSString *url = [self decodeLink:@"aHR0cHM6Ly90Lm1lL2hsMDBzcw=="]; 
+    // استدعاء الدالة المستقلة لتجنب أي أخطاء من المترجم
+    NSString *url = decodeBase64(@"aHR0cHM6Ly90Lm1lL2hsMDBzcw=="); 
     [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
 }
 
 %new
 - (void)openDev {
-    // الرابط مشفر: https://t.me/ipa_black
-    NSString *url = [self decodeLink:@"aHR0cHM6Ly90Lm1lL2lwYV9ibGFjaw=="];
+    NSString *url = decodeBase64(@"aHR0cHM6Ly90Lm1lL2lwYV9ibGFjaw==");
     [[UIApplication sharedApplication] openURL:[NSURL URLWithString:url] options:@{} completionHandler:nil];
 }
 
@@ -262,7 +262,6 @@ static void continuousRadar(UIView *mainMenu, UIView *ipaBlackUI) {
         ipaBlackUI.tag = 7777;
         ipaBlackUI.backgroundColor = [UIColor clearColor]; 
         
-        // تأثير الجلاسمورفيزم (الزجاج)
         UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
         UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
         blurView.frame = ipaBlackUI.bounds;
@@ -305,7 +304,6 @@ static void continuousRadar(UIView *mainMenu, UIView *ipaBlackUI) {
             [ipaBlackUI addSubview:scrollView];
         }
         
-        // --- قسم الإعدادات ---
         UIScrollView *tab3 = (UIScrollView *)[ipaBlackUI viewWithTag:8003];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 10, 100, 100)];
         profilePic.layer.cornerRadius = 50;

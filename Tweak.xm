@@ -32,7 +32,10 @@ static __attribute__((constructor)) void anti_debug_protection() {
             if ([text containsString:@"i3rby Store"]) { newText = @"IPA BLACK"; }
             else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
             else if ([text containsString:@"وضع الكسر"] || [text containsString:@"توقع الكسر"]) { newText = @"توقع الكسرة"; }
-            else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; } // تغيير الأسماء الخاصة باللعب التلقائي
+            else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
+            else if ([text isEqualToString:@"الرسوم"]) { newText = @"طريقة العرض"; }
+            else if ([text containsString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
+            else if ([text containsString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
             %orig(newText);
         } else {
             %orig(text);
@@ -112,9 +115,10 @@ static void hijackRow(UIView *row, UIScrollView *scroll, CGFloat *offset) {
     });
 }
 
-// مسافات التمرير للأقسام (التوقع، واللعب التلقائي)
+// مسافات التمرير للأقسام الثلاثة التي تحتوي على أزرار
 static CGFloat tabOffset0 = 10; 
 static CGFloat tabOffset1 = 10; 
+static CGFloat tabOffset2 = 10; 
 
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
@@ -170,28 +174,32 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
-    // --- 2. رادار القوائم (قسم التوقع + قسم اللعب التلقائي) ---
+    // --- 2. رادار القوائم (توقع، طريقة العرض، لعب تلقائي) ---
     UIScrollView *tabPredict = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
-    UIScrollView *tabAutoPlay = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
+    UIScrollView *tabVisuals = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
+    UIScrollView *tabAutoPlay = (UIScrollView *)[ipaBlackUI viewWithTag:8002];
     
-    NSArray *predictionTargets = @[@"حماية البث", @"توقع الخصم", @"حدود الطاولة", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"خطوط التوقع", @"توقع الكسرة"];
-    
-    // الأزرار الخاصة باللعب التلقائي والجلسات
+    // تم إضافة جميع الأزرار والخصائص لكل قسم
+    NSArray *predictionTargets = @[@"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"توقع الضربه القويه"];
+    NSArray *visualTargets = @[@"طريقة العرض", @"إزاحة Y", @"إزاحة X", @"مقياس X", @"مقياس Y", @"سمك الخط", @"شفافية الخط", @"حلقة الجيب"];
     NSArray *autoPlayTargets = @[@"زر الاختصار", @"إيقاف عند اللمس", @"نمط دوران", @"وضع التصويب", @"أسلوب اللعب", @"مستوى اللعب", @"قوة التصويب", @"سرعة تصويب"];
     
-    // نقل أزرار التوقع
     if (tabPredict) {
         for (NSString *name in predictionTargets) {
             UILabel *lbl = findLabel(mainMenu, name);
             if (lbl) hijackRow(getRowForLabel(lbl), tabPredict, &tabOffset0);
         }
     }
-    
-    // نقل أزرار اللعب التلقائي
+    if (tabVisuals) {
+        for (NSString *name in visualTargets) {
+            UILabel *lbl = findLabel(mainMenu, name);
+            if (lbl) hijackRow(getRowForLabel(lbl), tabVisuals, &tabOffset1);
+        }
+    }
     if (tabAutoPlay) {
         for (NSString *name in autoPlayTargets) {
             UILabel *lbl = findLabel(mainMenu, name);
-            if (lbl) hijackRow(getRowForLabel(lbl), tabAutoPlay, &tabOffset1);
+            if (lbl) hijackRow(getRowForLabel(lbl), tabAutoPlay, &tabOffset2);
         }
     }
     
@@ -219,8 +227,8 @@ static NSString* decodeBase64(NSString *encoded) {
 %new
 - (void)tabChanged:(UISegmentedControl *)sender {
     UIView *ipaBlackUI = [self viewWithTag:7777];
-    // لدينا 3 أقسام الآن بدلاً من 2
-    for (int i = 0; i < 3; i++) {
+    // لدينا 4 أقسام الآن (توقع، عرض، لعب تلقائي، إعدادات)
+    for (int i = 0; i < 4; i++) {
         UIView *container = [ipaBlackUI viewWithTag:8000 + i];
         container.hidden = (i != sender.selectedSegmentIndex);
     }
@@ -272,8 +280,8 @@ static NSString* decodeBase64(NSString *encoded) {
         
         [mainMenu addSubview:ipaBlackUI];
         
-        // --- شريط التبويبات (ثلاثة أقسام) ---
-        UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"اللعب التلقائي", @"الإعدادات"]];
+        // --- شريط التبويبات (أربعة أقسام) ---
+        UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"طريقة العرض", @"اللعب التلقائي", @"الإعدادات"]];
         tabs.frame = CGRectMake(20, 15, 580, 40);
         tabs.selectedSegmentIndex = 0; 
         [tabs addTarget:self action:@selector(tabChanged:) forControlEvents:UIControlEventValueChanged];
@@ -283,12 +291,12 @@ static NSString* decodeBase64(NSString *encoded) {
         } else {
             tabs.tintColor = goldColor;
         }
-        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateNormal];
-        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateSelected];
+        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:14]} forState:UIControlStateNormal];
+        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:14]} forState:UIControlStateSelected];
         [ipaBlackUI addSubview:tabs];
         
-        // --- إنشاء قوائم التمرير للثلاثة أقسام ---
-        for (int i = 0; i < 3; i++) {
+        // --- إنشاء قوائم التمرير للأقسام الأربعة ---
+        for (int i = 0; i < 4; i++) {
             UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 65, 580, 315)];
             scrollView.tag = 8000 + i; 
             scrollView.backgroundColor = [UIColor clearColor]; 
@@ -299,8 +307,8 @@ static NSString* decodeBase64(NSString *encoded) {
             [ipaBlackUI addSubview:scrollView];
         }
         
-        // --- بناء قسم الإعدادات (أصبح التاج 8002 لأنه التبويب الثالث) ---
-        UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8002];
+        // --- بناء قسم الإعدادات (أصبح التاج 8003 لأنه التبويب الرابع) ---
+        UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8003];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 20, 100, 100)];
         profilePic.layer.cornerRadius = 50;
         profilePic.layer.masksToBounds = YES;

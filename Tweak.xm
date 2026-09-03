@@ -115,10 +115,28 @@ static void hijackRow(UIView *row, UIScrollView *scroll, CGFloat *offset) {
     });
 }
 
-// مسافات التمرير للأقسام الثلاثة التي تحتوي على أزرار
+// مسافات التمرير للأقسام الثلاثة
 static CGFloat tabOffset0 = 10; 
 static CGFloat tabOffset1 = 10; 
 static CGFloat tabOffset2 = 10; 
+
+// دالة حديثة لجلب الشاشة النشطة وتجنب أخطاء البناء في جيت هب
+static UIWindow* getModernKeyWindow() {
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *window in scene.windows) {
+                    if (window.isKeyWindow) return window;
+                }
+            }
+        }
+    }
+    // إخفاء التحذير عن המתרجم للإصدارات القديمة
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [UIApplication sharedApplication].keyWindow;
+#pragma clang diagnostic pop
+}
 
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
@@ -126,7 +144,7 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
     // --- 1. رادار الأيقونة العائمة ---
     static BOOL didChangeFloatingButton = NO;
     if (!didChangeFloatingButton) {
-        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+        UIWindow *window = getModernKeyWindow(); // استخدام الدالة الجديدة هنا
         if (window) {
             for (UIView *view in window.subviews) {
                 BOOL isFloatingButton = NO;
@@ -174,12 +192,11 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
-    // --- 2. رادار القوائم (توقع، طريقة العرض، لعب تلقائي) ---
+    // --- 2. رادار القوائم ---
     UIScrollView *tabPredict = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
     UIScrollView *tabVisuals = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
     UIScrollView *tabAutoPlay = (UIScrollView *)[ipaBlackUI viewWithTag:8002];
     
-    // تم إضافة جميع الأزرار والخصائص لكل قسم
     NSArray *predictionTargets = @[@"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"توقع الضربه القويه"];
     NSArray *visualTargets = @[@"طريقة العرض", @"إزاحة Y", @"إزاحة X", @"مقياس X", @"مقياس Y", @"سمك الخط", @"شفافية الخط", @"حلقة الجيب"];
     NSArray *autoPlayTargets = @[@"زر الاختصار", @"إيقاف عند اللمس", @"نمط دوران", @"وضع التصويب", @"أسلوب اللعب", @"مستوى اللعب", @"قوة التصويب", @"سرعة تصويب"];
@@ -227,7 +244,6 @@ static NSString* decodeBase64(NSString *encoded) {
 %new
 - (void)tabChanged:(UISegmentedControl *)sender {
     UIView *ipaBlackUI = [self viewWithTag:7777];
-    // لدينا 4 أقسام الآن (توقع، عرض، لعب تلقائي، إعدادات)
     for (int i = 0; i < 4; i++) {
         UIView *container = [ipaBlackUI viewWithTag:8000 + i];
         container.hidden = (i != sender.selectedSegmentIndex);
@@ -280,7 +296,6 @@ static NSString* decodeBase64(NSString *encoded) {
         
         [mainMenu addSubview:ipaBlackUI];
         
-        // --- شريط التبويبات (أربعة أقسام) ---
         UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"طريقة العرض", @"اللعب التلقائي", @"الإعدادات"]];
         tabs.frame = CGRectMake(20, 15, 580, 40);
         tabs.selectedSegmentIndex = 0; 
@@ -295,7 +310,6 @@ static NSString* decodeBase64(NSString *encoded) {
         [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:14]} forState:UIControlStateSelected];
         [ipaBlackUI addSubview:tabs];
         
-        // --- إنشاء قوائم التمرير للأقسام الأربعة ---
         for (int i = 0; i < 4; i++) {
             UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 65, 580, 315)];
             scrollView.tag = 8000 + i; 
@@ -307,7 +321,6 @@ static NSString* decodeBase64(NSString *encoded) {
             [ipaBlackUI addSubview:scrollView];
         }
         
-        // --- بناء قسم الإعدادات (أصبح التاج 8003 لأنه التبويب الرابع) ---
         UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8003];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 20, 100, 100)];
         profilePic.layer.cornerRadius = 50;

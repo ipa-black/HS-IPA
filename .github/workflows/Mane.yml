@@ -13,6 +13,10 @@ jobs:
     steps:
       - name: 📥 سحب الكود (Checkout Code)
         uses: actions/checkout@v4
+        
+      - name: 🛠️ تثبيت الأدوات المساعدة (Install ldid)
+        run: |
+          brew install ldid
 
       - name: ⚙️ تثبيت بيئة Theos و SDKs
         run: |
@@ -22,7 +26,6 @@ jobs:
 
       - name: 📝 إنشاء ملفات البناء تلقائياً (Auto-Generate Files)
         run: |
-          # 1. إنشاء ملف Makefile
           cat << 'EOF' > Makefile
           TARGET := iphone:clang:latest:13.0
           ARCHS = arm64
@@ -39,7 +42,6 @@ jobs:
           include $(THEOS_MAKE_PATH)/tweak.mk
           EOF
           
-          # 2. إنشاء ملف control
           cat << 'EOF' > control
           Package: com.ipablack.mod
           Name: IPA BLACK Premium
@@ -52,7 +54,6 @@ jobs:
           Section: Tweaks
           EOF
           
-          # 3. إنشاء ملف PliST الخاص باللعبة
           cat << 'EOF' > IPABLACK.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

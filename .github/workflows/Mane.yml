@@ -75,10 +75,16 @@ jobs:
           export THEOS=${{ github.workspace }}/theos
           make package FINALPACKAGE=1
 
+      - name: 📁 تجميع الملفات النهائية (Gather Final Files)
+        run: |
+          mkdir -p Final_Build
+          # نسخ ملف الجلبريك
+          cp packages/*.deb Final_Build/
+          # البحث عن ملف الدايلب ونسخه بجانبه
+          find .theos/obj -name "*.dylib" -exec cp {} Final_Build/ \;
+
       - name: 📦 رفع الملفات الجاهزة (Upload Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: IPA_BLACK_Build
-          path: |
-            packages/*.deb
-            .theos/obj/**/*.dylib
+          path: Final_Build/

@@ -1,9 +1,0 @@
-Package: com.ipablack.mod
-Name: IPA BLACK Premium
-Depends: mobilesubstrate
-Version: 1.0.0
-Architecture: iphoneos-arm
-Description: IPA BLACK Premium Mod
-Maintainer: IPA BLACK
-Author: IPA BLACK
-Section: Tweaks

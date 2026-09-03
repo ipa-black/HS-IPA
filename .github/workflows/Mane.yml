@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # يتيح لك التشغيل اليدوي بضغطة زر
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,14 +16,58 @@ jobs:
 
       - name: ⚙️ تثبيت بيئة Theos و SDKs
         run: |
-          # 1. تحميل Theos
           git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
-          
-          # 2. حذف مجلد sdks الافتراضي لتجنب الخطأ
           rm -rf ${{ github.workspace }}/theos/sdks
-          
-          # 3. تحميل SDKs الخاص بأبل
           git clone https://github.com/theos/sdks.git ${{ github.workspace }}/theos/sdks
+
+      - name: 📝 إنشاء ملفات البناء تلقائياً (Auto-Generate Files)
+        run: |
+          # 1. إنشاء ملف Makefile
+          cat << 'EOF' > Makefile
+          TARGET := iphone:clang:latest:13.0
+          ARCHS = arm64
+          DEBUG = 0
+          FINALPACKAGE = 1
+          
+          TWEAK_NAME = IPABLACK
+          
+          IPABLACK_FILES = Tweak.xm
+          IPABLACK_FRAMEWORKS = UIKit
+          IPABLACK_CFLAGS = -fobjc-arc
+          
+          include $(THEOS)/makefiles/common.mk
+          include $(THEOS_MAKE_PATH)/tweak.mk
+          EOF
+          
+          # 2. إنشاء ملف control
+          cat << 'EOF' > control
+          Package: com.ipablack.mod
+          Name: IPA BLACK Premium
+          Depends: mobilesubstrate
+          Version: 1.0.0
+          Architecture: iphoneos-arm
+          Description: IPA BLACK Premium Mod
+          Maintainer: IPA BLACK
+          Author: IPA BLACK
+          Section: Tweaks
+          EOF
+          
+          # 3. إنشاء ملف PliST الخاص باللعبة
+          cat << 'EOF' > IPABLACK.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>Filter</key>
+              <dict>
+                  <key>Bundles</key>
+                  <array>
+                      <string>com.miniclip.8ballpoolmult</string>
+                  </array>
+              </dict>
+          </dict>
+          </plist>
+          EOF
 
       - name: 🔨 بناء المود (Compile Tweak)
         run: |

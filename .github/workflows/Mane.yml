@@ -16,7 +16,13 @@ jobs:
 
       - name: ⚙️ تثبيت بيئة Theos و SDKs
         run: |
+          # 1. تحميل Theos
           git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
+          
+          # 2. حذف مجلد sdks الافتراضي لتجنب الخطأ
+          rm -rf ${{ github.workspace }}/theos/sdks
+          
+          # 3. تحميل SDKs الخاص بأبل
           git clone https://github.com/theos/sdks.git ${{ github.workspace }}/theos/sdks
 
       - name: 🔨 بناء المود (Compile Tweak)
@@ -30,4 +36,4 @@ jobs:
           name: IPA_BLACK_Build
           path: |
             packages/*.deb
-            .theos/obj/debug/*.dylib
+            .theos/obj/**/*.dylib

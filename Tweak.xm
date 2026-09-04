@@ -3,7 +3,7 @@
 #import <sys/types.h>
 
 // ==========================================
-// حماية المود (Anti-Debugging)
+// 1. حماية المود (Anti-Debugging)
 // ==========================================
 static __attribute__((constructor)) void anti_debug_protection() {
     void *handle = dlopen(0, RTLD_GLOBAL | RTLD_NOW);
@@ -13,7 +13,31 @@ static __attribute__((constructor)) void anti_debug_protection() {
 }
 
 // ==========================================
-// 1. تعريف الكلاسات
+// 2. نظام الكاش للصور (لمنع كراش الذاكرة)
+// ==========================================
+static UIImage *cachedProfileImage = nil;
+static void fetchProfileImage(void (^completion)(UIImage *)) {
+    if (cachedProfileImage) {
+        if (completion) completion(cachedProfileImage);
+        return;
+    }
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
+        NSURL *url = [NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"];
+        NSData *data = [NSData dataWithContentsOfURL:url];
+        if (data) {
+            UIImage *img = [UIImage imageWithData:data];
+            if (img) {
+                cachedProfileImage = img;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (completion) completion(cachedProfileImage);
+                });
+            }
+        }
+    });
+}
+
+// ==========================================
+// 3. تعريف الكلاسات
 // ==========================================
 @interface GBModMenu : UIView
 - (void)tabChanged:(UISegmentedControl *)sender;
@@ -30,30 +54,35 @@ static __attribute__((constructor)) void anti_debug_protection() {
 @end
 
 // ==========================================
-// 2. برمجة زر الصح (حفظ الإعدادات)
+// 4. برمجة الأزرار (بشكل آمن تماماً)
 // ==========================================
 @implementation CBToggle
 - (void)btnTapped {
     if (!self.targetSwitch) return;
     
+    // استخدام weakSelf لمنع تسرب الذاكرة (Memory Leak)
+    __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
-        BOOL newState = !self.targetSwitch.isOn;
-        [self.targetSwitch setOn:newState animated:YES];
-        [self.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
-        [self.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
         
-        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", self.baseTitle];
+        BOOL newState = !strongSelf.targetSwitch.isOn;
+        [strongSelf.targetSwitch setOn:newState animated:YES];
+        [strongSelf.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+        [strongSelf.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
+        
+        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", strongSelf.baseTitle];
         [[NSUserDefaults standardUserDefaults] setBool:newState forKey:saveKey];
         [[NSUserDefaults standardUserDefaults] synchronize];
         
-        [self updateLook];
+        [strongSelf updateLook];
     });
 }
+
 - (void)updateLook {
     if (!self.targetSwitch) return;
     
     UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
-    
     if (self.targetSwitch.isOn) {
         [self setTitle:[NSString stringWithFormat:@"✔  %@", self.baseTitle] forState:UIControlStateNormal];
         [self setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
@@ -71,20 +100,19 @@ static __attribute__((constructor)) void anti_debug_protection() {
 @end
 
 // ==========================================
-// 3. تغيير الأسماء الأصلية (Hooks)
+// 5. تغيير الأسماء الأصلية (Hooks)
 // ==========================================
 %hook UILabel
 - (void)setText:(NSString *)text {
     @try {
-        if (text != nil && [text isKindOfClass:[NSString class]]) {
+        if (text.length > 0 && [text isKindOfClass:[NSString class]]) {
             NSString *newText = text;
-            if ([text containsString:@"i3rby Store"]) { newText = @"IPA BLACK"; }
-            else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
-            // [إصلاح ذكي]: المطابقة الدقيقة لأسماء الأزرار فقط لعدم تدمير نسبة الكسرة العائمة
-            else if ([text isEqualToString:@"وضع الكسر"] || [text isEqualToString:@"توقع الكسر"]) { newText = @"توقع الكسرة"; }
-            else if ([text isEqualToString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
-            else if ([text isEqualToString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
-            else if ([text isEqualToString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
+            if ([text containsString:@"i3rby Store"]) newText = @"IPA BLACK";
+            else if ([text containsString:@"ايفون بالعربي"]) newText = @"";
+            else if ([text containsString:@"كسر"] || [text containsString:@"الكسر"] || [text containsString:@"Break"]) newText = @"توقع الكسرة";
+            else if ([text containsString:@"السحب الابتدائي"]) newText = @"توقع الضربه القويه";
+            else if ([text containsString:@"الكره الخاطئة"]) newText = @"تنبيه الكره الخاطئة";
+            
             %orig(newText);
         } else {
             %orig(text);
@@ -96,7 +124,7 @@ static __attribute__((constructor)) void anti_debug_protection() {
 %end
 
 // ==========================================
-// 4. محرك البناء والخطف الدقيق
+// 6. محرك البناء والخطف الدقيق
 // ==========================================
 static UILabel* findLabel(UIView *root, NSString *searchText) {
     if (!root) return nil;
@@ -119,10 +147,11 @@ static UIView* getRowForLabel(UILabel *lbl) {
     return parent;
 }
 
+// [تنظيف خطير]: تمت إزالة dispatch_async من هنا لمنع كراش الـ (offset pointer)
 static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, CGFloat *offset) {
     if (!row || !scroll) return;
     
-    // --- [فلتر الذكاء الاصطناعي]: التأكد أن هذا الصف هو زر للمنيو وليس نص عائم (كنسبة الكسرة) ---
+    // التأكد أن هذا الصف يحتوي على أدوات تحكم وليس نصاً عائماً
     BOOL hasControlElement = NO;
     for (UIView *v in row.subviews) {
         if ([v isKindOfClass:[UISwitch class]] || [v isKindOfClass:[UISlider class]] || [v isKindOfClass:[UISegmentedControl class]]) {
@@ -130,7 +159,7 @@ static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, C
             break;
         }
     }
-    if (!hasControlElement) return; // إذا كان مجرد نص عائم للعبة، اتركه في حاله!
+    if (!hasControlElement) return; 
     
     row.tag = 9999; 
     
@@ -217,10 +246,10 @@ static UIWindow* getModernKeyWindow() {
 #pragma clang diagnostic pop
 }
 
+// رادار القوائم المتصل (يعمل على الخط الرئيسي)
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
     
-    // --- 1. رادار الأيقونة العائمة ---
     static BOOL didChangeFloatingButton = NO;
     if (!didChangeFloatingButton) {
         UIWindow *window = getModernKeyWindow();
@@ -254,15 +283,10 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
                         
                         [view addSubview:iconOverlay];
                         
-                        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"]];
-                            if (imgData) {
-                                UIImage *img = [UIImage imageWithData:imgData];
-                                if (img) {
-                                    dispatch_async(dispatch_get_main_queue(), ^{ iconOverlay.image = img; });
-                                }
-                            }
-                        });
+                        // [تنظيف]: استخدام دالة الكاش للصور
+                        fetchProfileImage^(UIImage *img) {
+                            iconOverlay.image = img;
+                        };
                     }
                     didChangeFloatingButton = YES;
                     break;
@@ -271,15 +295,13 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
-    // --- 2. رادار القوائم (قسم التوقع والإعدادات فقط) ---
     UIScrollView *tabPredict = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
     
-    // إزالة كلمات "الكسر" العامة لتجنب سحب النصوص العائمة
     NSArray *predictionTargets = @[
         @"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"الكره الخاطئة", 
-        @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"وضع الكسر", 
-        @"توقع الضربه القويه", @"السحب الابتدائي", @"الوان الكرات", @"ألوان الكرات", @"الكرات", 
-        @"تمييز", @"تميز", @"سادة ومخطط", @"عصا", @"طول العصا", @"طويلة", @"الرسوم", @"طريقة العرض"
+        @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", 
+        @"كسر", @"الكسر", @"وضع الكسر", @"Break", @"توقع الضربه القويه", @"السحب الابتدائي",
+        @"الوان الكرات", @"ألوان الكرات", @"الكرات", @"تمييز", @"تميز", @"سادة ومخطط", @"عصا", @"طول العصا", @"طويلة", @"الرسوم", @"طريقة العرض"
     ];
     
     if (tabPredict) {
@@ -302,10 +324,10 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
 }
 
 // ==========================================
-// 5. دوال مساعدة
+// 7. فك تشفير الروابط
 // ==========================================
 static NSString* decodeBase64(NSString *encoded) {
-    if (!encoded) return @""; 
+    if (!encoded || encoded.length == 0) return @""; 
     NSData *data = [[NSData alloc] initWithBase64EncodedString:encoded options:0];
     if (!data) return @"";
     NSString *decoded = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -313,13 +335,15 @@ static NSString* decodeBase64(NSString *encoded) {
 }
 
 // ==========================================
-// 6. بناء الواجهة الرئيسية
+// 8. بناء الواجهة الرئيسية (Main UI)
 // ==========================================
 %hook GBModMenu
 
 %new
 - (void)handlePan:(UIPanGestureRecognizer *)recognizer {
     UIView *ipaBlackUI = [self viewWithTag:7777];
+    if (!ipaBlackUI) return;
+    
     if (recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged) {
         CGPoint translation = [recognizer translationInView:self];
         ipaBlackUI.center = CGPointMake(ipaBlackUI.center.x + translation.x, ipaBlackUI.center.y + translation.y);
@@ -330,6 +354,8 @@ static NSString* decodeBase64(NSString *encoded) {
 %new
 - (void)toggleSize {
     UIView *ipaBlackUI = [self viewWithTag:7777];
+    if (!ipaBlackUI) return;
+    
     UIView *miniLogo = [ipaBlackUI viewWithTag:5555];
     UIButton *btnMax = (UIButton *)[ipaBlackUI viewWithTag:5556];
     
@@ -337,6 +363,7 @@ static NSString* decodeBase64(NSString *encoded) {
 
     [UIView animateWithDuration:0.3 animations:^{
         if (!isMin) {
+            // تصغير
             ipaBlackUI.bounds = CGRectMake(0, 0, 60, 60);
             ipaBlackUI.layer.cornerRadius = 30;
             for (UIView *sub in ipaBlackUI.subviews) {
@@ -345,6 +372,7 @@ static NSString* decodeBase64(NSString *encoded) {
             miniLogo.alpha = 1.0;
             btnMax.hidden = NO;
         } else {
+            // تكبير
             ipaBlackUI.bounds = CGRectMake(0, 0, 620, 400);
             ipaBlackUI.layer.cornerRadius = 15;
             for (UIView *sub in ipaBlackUI.subviews) {
@@ -370,15 +398,12 @@ static NSString* decodeBase64(NSString *encoded) {
 %new
 - (void)tabChanged:(UISegmentedControl *)sender {
     UIView *ipaBlackUI = [self viewWithTag:7777];
+    if (!ipaBlackUI) return;
+    
     for (int i = 0; i < 2; i++) {
         UIView *container = [ipaBlackUI viewWithTag:8000 + i];
         container.hidden = (i != sender.selectedSegmentIndex);
-        
-        if (i == sender.selectedSegmentIndex) {
-            container.alpha = 1.0;
-        } else {
-            container.alpha = 0.0;
-        }
+        container.alpha = (i == sender.selectedSegmentIndex) ? 1.0 : 0.0;
     }
 }
 
@@ -433,6 +458,7 @@ static NSString* decodeBase64(NSString *encoded) {
         
         [mainMenu addSubview:ipaBlackUI];
         
+        // شعار التصغير
         UIImageView *miniLogo = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 60, 60)];
         miniLogo.tag = 5555;
         miniLogo.layer.cornerRadius = 30;
@@ -442,6 +468,7 @@ static NSString* decodeBase64(NSString *encoded) {
         miniLogo.layer.borderColor = goldColor.CGColor;
         [ipaBlackUI addSubview:miniLogo];
         
+        // زر التصغير الشفاف للعودة للتكبير
         UIButton *btnMax = [UIButton buttonWithType:UIButtonTypeCustom];
         btnMax.frame = CGRectMake(0, 0, 60, 60);
         btnMax.tag = 5556;
@@ -449,19 +476,13 @@ static NSString* decodeBase64(NSString *encoded) {
         btnMax.hidden = YES;
         [ipaBlackUI addSubview:btnMax];
         
+        // [تنظيف]: استخدام دالة الكاش للصور بدلاً من تكرار التحميل
         __weak UIImageView *weakMiniLogo = miniLogo;
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"]];
-            if (imgData) {
-                UIImage *img = [UIImage imageWithData:imgData];
-                if (img) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        if (weakMiniLogo) weakMiniLogo.image = img;
-                    });
-                }
-            }
-        });
+        fetchProfileImage^(UIImage *img) {
+            if (weakMiniLogo) weakMiniLogo.image = img;
+        };
 
+        // زر علامة الناقص ➖
         UIButton *btnMin = [UIButton buttonWithType:UIButtonTypeCustom];
         btnMin.frame = CGRectMake(570, 15, 35, 35);
         [btnMin setTitle:@"➖" forState:UIControlStateNormal];
@@ -472,6 +493,7 @@ static NSString* decodeBase64(NSString *encoded) {
         [btnMin addTarget:self action:@selector(toggleSize) forControlEvents:UIControlEventTouchUpInside];
         [ipaBlackUI addSubview:btnMin];
         
+        // التبويبات
         UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"الإعدادات"]];
         tabs.frame = CGRectMake(20, 15, 530, 40); 
         tabs.tag = 12345;
@@ -485,6 +507,7 @@ static NSString* decodeBase64(NSString *encoded) {
         [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateSelected];
         [ipaBlackUI addSubview:tabs];
         
+        // مناطق التمرير للتبويبات
         for (int i = 0; i < 2; i++) {
             UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 65, 580, 315)];
             scrollView.tag = 8000 + i; 
@@ -497,6 +520,7 @@ static NSString* decodeBase64(NSString *encoded) {
             [ipaBlackUI addSubview:scrollView];
         }
         
+        // قسم الإعدادات
         UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 20, 100, 100)];
         profilePic.layer.cornerRadius = 50;
@@ -507,18 +531,9 @@ static NSString* decodeBase64(NSString *encoded) {
         [tabSettings addSubview:profilePic];
         
         __weak UIImageView *weakProfilePic = profilePic;
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSURL *url = [NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"];
-            NSData *imgData = [NSData dataWithContentsOfURL:url];
-            if (imgData) {
-                UIImage *img = [UIImage imageWithData:imgData];
-                if (img) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        if (weakProfilePic) weakProfilePic.image = img;
-                    });
-                }
-            }
-        });
+        fetchProfileImage^(UIImage *img) {
+            if (weakProfilePic) weakProfilePic.image = img;
+        };
         
         UILabel *nameLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 135, 580, 30)];
         nameLabel.text = @"IPA BLACK Premium Mod";

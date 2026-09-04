@@ -20,6 +20,7 @@ static __attribute__((constructor)) void anti_debug_protection() {
 - (void)openChannel;
 - (void)openDev;
 - (void)handlePan:(UIPanGestureRecognizer *)recognizer;
+- (void)toggleSize;
 @end
 
 @interface CBToggle : UIButton
@@ -79,12 +80,11 @@ static __attribute__((constructor)) void anti_debug_protection() {
             NSString *newText = text;
             if ([text containsString:@"i3rby Store"]) { newText = @"IPA BLACK"; }
             else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
-            // [إصلاح الكسرة]: صيد أي كلمة تتعلق بالكسر مهما كانت!
-            else if ([text containsString:@"كسر"] || [text containsString:@"الكسر"] || [text containsString:@"Break"]) { newText = @"توقع الكسرة"; }
-            else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
-            else if ([text isEqualToString:@"الرسوم"]) { newText = @"طريقة العرض"; }
-            else if ([text containsString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
-            else if ([text containsString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
+            // [إصلاح ذكي]: المطابقة الدقيقة لأسماء الأزرار فقط لعدم تدمير نسبة الكسرة العائمة
+            else if ([text isEqualToString:@"وضع الكسر"] || [text isEqualToString:@"توقع الكسر"]) { newText = @"توقع الكسرة"; }
+            else if ([text isEqualToString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
+            else if ([text isEqualToString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
+            else if ([text isEqualToString:@"الكره الخاطئة"]) { newText = @"تنبيه الكره الخاطئة"; }
             %orig(newText);
         } else {
             %orig(text);
@@ -121,6 +121,16 @@ static UIView* getRowForLabel(UILabel *lbl) {
 
 static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, CGFloat *offset) {
     if (!row || !scroll) return;
+    
+    // --- [فلتر الذكاء الاصطناعي]: التأكد أن هذا الصف هو زر للمنيو وليس نص عائم (كنسبة الكسرة) ---
+    BOOL hasControlElement = NO;
+    for (UIView *v in row.subviews) {
+        if ([v isKindOfClass:[UISwitch class]] || [v isKindOfClass:[UISlider class]] || [v isKindOfClass:[UISegmentedControl class]]) {
+            hasControlElement = YES;
+            break;
+        }
+    }
+    if (!hasControlElement) return; // إذا كان مجرد نص عائم للعبة، اتركه في حاله!
     
     row.tag = 9999; 
     
@@ -190,8 +200,6 @@ static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, C
 }
 
 static CGFloat tabOffset0 = 10; 
-static CGFloat tabOffset1 = 10; 
-static CGFloat tabOffset2 = 10; 
 
 static UIWindow* getModernKeyWindow() {
     if (@available(iOS 13.0, *)) {
@@ -212,6 +220,7 @@ static UIWindow* getModernKeyWindow() {
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
     
+    // --- 1. رادار الأيقونة العائمة ---
     static BOOL didChangeFloatingButton = NO;
     if (!didChangeFloatingButton) {
         UIWindow *window = getModernKeyWindow();
@@ -262,32 +271,21 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
+    // --- 2. رادار القوائم (قسم التوقع والإعدادات فقط) ---
     UIScrollView *tabPredict = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
-    UIScrollView *tabVisuals = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
-    UIScrollView *tabAutoPlay = (UIScrollView *)[ipaBlackUI viewWithTag:8002];
     
-    // [إصلاح الكسرة]: أضفنا مسميات إضافية كثيرة للرادار لضمان التقاط الزر
-    NSArray *predictionTargets = @[@"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"الكره الخاطئة", @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"كسر", @"الكسر", @"وضع الكسر", @"Break", @"توقع الضربه القويه", @"السحب الابتدائي"];
-    
-    NSArray *visualTargets = @[@"طريقة العرض", @"الرسوم", @"إزاحة Y", @"إزاحة X", @"مقياس X", @"مقياس Y", @"سمك الخط", @"شفافية الخط", @"حلقة الجيب"];
-    NSArray *autoPlayTargets = @[@"زر الاختصار", @"إيقاف عند اللمس", @"نمط دوران", @"وضع التصويب", @"أسلوب اللعب", @"البشرنة", @"مستوى اللعب", @"قوة التصويب", @"سرعة تصويب"];
+    // إزالة كلمات "الكسر" العامة لتجنب سحب النصوص العائمة
+    NSArray *predictionTargets = @[
+        @"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"الكره الخاطئة", 
+        @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"وضع الكسر", 
+        @"توقع الضربه القويه", @"السحب الابتدائي", @"الوان الكرات", @"ألوان الكرات", @"الكرات", 
+        @"تمييز", @"تميز", @"سادة ومخطط", @"عصا", @"طول العصا", @"طويلة", @"الرسوم", @"طريقة العرض"
+    ];
     
     if (tabPredict) {
         for (NSString *name in predictionTargets) {
             UILabel *lbl = findLabel(mainMenu, name);
             if (lbl) hijackRow(getRowForLabel(lbl), name, tabPredict, &tabOffset0);
-        }
-    }
-    if (tabVisuals) {
-        for (NSString *name in visualTargets) {
-            UILabel *lbl = findLabel(mainMenu, name);
-            if (lbl) hijackRow(getRowForLabel(lbl), name, tabVisuals, &tabOffset1);
-        }
-    }
-    if (tabAutoPlay) {
-        for (NSString *name in autoPlayTargets) {
-            UILabel *lbl = findLabel(mainMenu, name);
-            if (lbl) hijackRow(getRowForLabel(lbl), name, tabAutoPlay, &tabOffset2);
         }
     }
     
@@ -321,20 +319,66 @@ static NSString* decodeBase64(NSString *encoded) {
 
 %new
 - (void)handlePan:(UIPanGestureRecognizer *)recognizer {
-    UIView *menuView = (UIView *)self;
+    UIView *ipaBlackUI = [self viewWithTag:7777];
     if (recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged) {
-        CGPoint translation = [recognizer translationInView:menuView.superview];
-        menuView.center = CGPointMake(menuView.center.x + translation.x, menuView.center.y + translation.y);
-        [recognizer setTranslation:CGPointZero inView:menuView.superview];
+        CGPoint translation = [recognizer translationInView:self];
+        ipaBlackUI.center = CGPointMake(ipaBlackUI.center.x + translation.x, ipaBlackUI.center.y + translation.y);
+        [recognizer setTranslation:CGPointZero inView:self];
     }
+}
+
+%new
+- (void)toggleSize {
+    UIView *ipaBlackUI = [self viewWithTag:7777];
+    UIView *miniLogo = [ipaBlackUI viewWithTag:5555];
+    UIButton *btnMax = (UIButton *)[ipaBlackUI viewWithTag:5556];
+    
+    BOOL isMin = ipaBlackUI.bounds.size.width < 100;
+
+    [UIView animateWithDuration:0.3 animations:^{
+        if (!isMin) {
+            ipaBlackUI.bounds = CGRectMake(0, 0, 60, 60);
+            ipaBlackUI.layer.cornerRadius = 30;
+            for (UIView *sub in ipaBlackUI.subviews) {
+                if (sub.tag != 5555 && sub.tag != 5556) sub.alpha = 0.0;
+            }
+            miniLogo.alpha = 1.0;
+            btnMax.hidden = NO;
+        } else {
+            ipaBlackUI.bounds = CGRectMake(0, 0, 620, 400);
+            ipaBlackUI.layer.cornerRadius = 15;
+            for (UIView *sub in ipaBlackUI.subviews) {
+                if (sub.tag != 5555 && sub.tag != 5556) {
+                    if (sub.tag == 8000 || sub.tag == 8001) {
+                        UISegmentedControl *tabs = (UISegmentedControl *)[ipaBlackUI viewWithTag:12345];
+                        if (tabs && (sub.tag - 8000) != tabs.selectedSegmentIndex) {
+                            sub.alpha = 0.0;
+                        } else {
+                            sub.alpha = 1.0;
+                        }
+                    } else {
+                        sub.alpha = 1.0;
+                    }
+                }
+            }
+            miniLogo.alpha = 0.0;
+            btnMax.hidden = YES;
+        }
+    }];
 }
 
 %new
 - (void)tabChanged:(UISegmentedControl *)sender {
     UIView *ipaBlackUI = [self viewWithTag:7777];
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
         UIView *container = [ipaBlackUI viewWithTag:8000 + i];
         container.hidden = (i != sender.selectedSegmentIndex);
+        
+        if (i == sender.selectedSegmentIndex) {
+            container.alpha = 1.0;
+        } else {
+            container.alpha = 0.0;
+        }
     }
 }
 
@@ -372,8 +416,6 @@ static NSString* decodeBase64(NSString *encoded) {
     UIView *ipaBlackUI = [mainMenu viewWithTag:7777];
     if (!ipaBlackUI) {
         tabOffset0 = 10;
-        tabOffset1 = 10;
-        tabOffset2 = 10;
         
         ipaBlackUI = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 620, 400)];
         ipaBlackUI.tag = 7777;
@@ -391,32 +433,71 @@ static NSString* decodeBase64(NSString *encoded) {
         
         [mainMenu addSubview:ipaBlackUI];
         
-        UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"طريقة العرض", @"اللعب التلقائي", @"الإعدادات"]];
-        tabs.frame = CGRectMake(20, 15, 580, 40);
+        UIImageView *miniLogo = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 60, 60)];
+        miniLogo.tag = 5555;
+        miniLogo.layer.cornerRadius = 30;
+        miniLogo.clipsToBounds = YES;
+        miniLogo.alpha = 0.0; 
+        miniLogo.layer.borderWidth = 2.0;
+        miniLogo.layer.borderColor = goldColor.CGColor;
+        [ipaBlackUI addSubview:miniLogo];
+        
+        UIButton *btnMax = [UIButton buttonWithType:UIButtonTypeCustom];
+        btnMax.frame = CGRectMake(0, 0, 60, 60);
+        btnMax.tag = 5556;
+        [btnMax addTarget:self action:@selector(toggleSize) forControlEvents:UIControlEventTouchUpInside];
+        btnMax.hidden = YES;
+        [ipaBlackUI addSubview:btnMax];
+        
+        __weak UIImageView *weakMiniLogo = miniLogo;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:@"https://up6.cc/2026/09/178839084819181.jpeg"]];
+            if (imgData) {
+                UIImage *img = [UIImage imageWithData:imgData];
+                if (img) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (weakMiniLogo) weakMiniLogo.image = img;
+                    });
+                }
+            }
+        });
+
+        UIButton *btnMin = [UIButton buttonWithType:UIButtonTypeCustom];
+        btnMin.frame = CGRectMake(570, 15, 35, 35);
+        [btnMin setTitle:@"➖" forState:UIControlStateNormal];
+        btnMin.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.8];
+        btnMin.layer.cornerRadius = 8;
+        btnMin.layer.borderWidth = 1;
+        btnMin.layer.borderColor = goldColor.CGColor;
+        [btnMin addTarget:self action:@selector(toggleSize) forControlEvents:UIControlEventTouchUpInside];
+        [ipaBlackUI addSubview:btnMin];
+        
+        UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"الإعدادات"]];
+        tabs.frame = CGRectMake(20, 15, 530, 40); 
+        tabs.tag = 12345;
         tabs.selectedSegmentIndex = 0; 
         [tabs addTarget:self action:@selector(tabChanged:) forControlEvents:UIControlEventValueChanged];
         
-        if (@available(iOS 13.0, *)) {
-            tabs.selectedSegmentTintColor = goldColor;
-        } else {
-            tabs.tintColor = goldColor;
-        }
-        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:14]} forState:UIControlStateNormal];
-        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:14]} forState:UIControlStateSelected];
+        if (@available(iOS 13.0, *)) { tabs.selectedSegmentTintColor = goldColor; } 
+        else { tabs.tintColor = goldColor; }
+        
+        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateNormal];
+        [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateSelected];
         [ipaBlackUI addSubview:tabs];
         
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 2; i++) {
             UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 65, 580, 315)];
             scrollView.tag = 8000 + i; 
             scrollView.backgroundColor = [UIColor clearColor]; 
-            scrollView.showsVerticalScrollIndicator = NO; 
-            scrollView.bounces = NO; 
-            scrollView.alwaysBounceVertical = NO; 
+            scrollView.showsVerticalScrollIndicator = YES; 
+            scrollView.bounces = YES; 
+            scrollView.alwaysBounceVertical = YES; 
+            scrollView.scrollEnabled = YES;
             scrollView.hidden = (i != 0);
             [ipaBlackUI addSubview:scrollView];
         }
         
-        UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8003];
+        UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 20, 100, 100)];
         profilePic.layer.cornerRadius = 50;
         profilePic.layer.masksToBounds = YES;

@@ -13,16 +13,64 @@ static __attribute__((constructor)) void anti_debug_protection() {
 }
 
 // ==========================================
-// 1. تعريف الكلاسات (Interfaces)
+// 1. تعريف الكلاسات
 // ==========================================
 @interface GBModMenu : UIView
 - (void)tabChanged:(UISegmentedControl *)sender;
 - (void)openChannel;
 - (void)openDev;
+- (void)handlePan:(UIPanGestureRecognizer *)recognizer;
+@end
+
+@interface CBToggle : UIButton
+@property (nonatomic, weak) UISwitch *targetSwitch; 
+@property (nonatomic, strong) NSString *baseTitle;
+- (void)updateLook;
 @end
 
 // ==========================================
-// 2. تغيير الأسماء الأصلية (Hooks)
+// 2. برمجة زر الصح (حفظ الإعدادات)
+// ==========================================
+@implementation CBToggle
+- (void)btnTapped {
+    if (!self.targetSwitch) return;
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        BOOL newState = !self.targetSwitch.isOn;
+        [self.targetSwitch setOn:newState animated:YES];
+        [self.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+        [self.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
+        
+        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", self.baseTitle];
+        [[NSUserDefaults standardUserDefaults] setBool:newState forKey:saveKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        
+        [self updateLook];
+    });
+}
+- (void)updateLook {
+    if (!self.targetSwitch) return;
+    
+    UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+    
+    if (self.targetSwitch.isOn) {
+        [self setTitle:[NSString stringWithFormat:@"✔  %@", self.baseTitle] forState:UIControlStateNormal];
+        [self setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+        self.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.85];
+        self.layer.borderWidth = 1.0;
+        self.layer.borderColor = goldColor.CGColor;
+    } else {
+        [self setTitle:[NSString stringWithFormat:@"☐  %@", self.baseTitle] forState:UIControlStateNormal];
+        [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        self.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.4];
+        self.layer.borderWidth = 1.0;
+        self.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:0.5].CGColor;
+    }
+}
+@end
+
+// ==========================================
+// 3. تغيير الأسماء الأصلية (Hooks)
 // ==========================================
 %hook UILabel
 - (void)setText:(NSString *)text {
@@ -31,7 +79,8 @@ static __attribute__((constructor)) void anti_debug_protection() {
             NSString *newText = text;
             if ([text containsString:@"i3rby Store"]) { newText = @"IPA BLACK"; }
             else if ([text containsString:@"ايفون بالعربي"]) { newText = @""; }
-            else if ([text containsString:@"وضع الكسر"] || [text containsString:@"توقع الكسر"]) { newText = @"توقع الكسرة"; }
+            // [إصلاح الكسرة]: صيد أي كلمة تتعلق بالكسر مهما كانت!
+            else if ([text containsString:@"كسر"] || [text containsString:@"الكسر"] || [text containsString:@"Break"]) { newText = @"توقع الكسرة"; }
             else if ([text containsString:@"البشرنة"]) { newText = @"أسلوب اللعب"; }
             else if ([text isEqualToString:@"الرسوم"]) { newText = @"طريقة العرض"; }
             else if ([text containsString:@"السحب الابتدائي"]) { newText = @"توقع الضربه القويه"; }
@@ -47,7 +96,7 @@ static __attribute__((constructor)) void anti_debug_protection() {
 %end
 
 // ==========================================
-// 3. محرك البناء والخطف الدقيق
+// 4. محرك البناء والخطف الدقيق
 // ==========================================
 static UILabel* findLabel(UIView *root, NSString *searchText) {
     if (!root) return nil;
@@ -70,57 +119,80 @@ static UIView* getRowForLabel(UILabel *lbl) {
     return parent;
 }
 
-static void hijackRow(UIView *row, UIScrollView *scroll, CGFloat *offset) {
+static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, CGFloat *offset) {
     if (!row || !scroll) return;
     
-    dispatch_async(dispatch_get_main_queue(), ^{
-        row.tag = 9999; 
+    row.tag = 9999; 
+    
+    @try {
+        [row removeFromSuperview];
+        row.translatesAutoresizingMaskIntoConstraints = YES;
+    } @catch (NSException *e) {}
+    
+    CGFloat h = 45; 
+    row.frame = CGRectMake(15, *offset, 550, h);
+    row.backgroundColor = [UIColor clearColor];
+    
+    UISwitch *sw = nil;
+    UISlider *sl = nil;
+    UISegmentedControl *seg = nil;
+    UILabel *txt = nil;
+    
+    for (UIView *v in row.subviews) {
+        if ([v isKindOfClass:[UISwitch class]]) sw = (UISwitch *)v;
+        else if ([v isKindOfClass:[UISlider class]]) sl = (UISlider *)v;
+        else if ([v isKindOfClass:[UISegmentedControl class]]) seg = (UISegmentedControl *)v;
+        else if ([v isKindOfClass:[UILabel class]]) txt = (UILabel *)v;
+    }
+    
+    if (sw && txt) {
+        sw.alpha = 0.0; 
+        txt.alpha = 0.0; 
         
-        @try {
-            [row removeFromSuperview];
-            row.translatesAutoresizingMaskIntoConstraints = YES;
-        } @catch (NSException *e) {}
-        
-        CGFloat h = 45; 
-        row.frame = CGRectMake(15, *offset, 550, h);
-        row.backgroundColor = [UIColor clearColor];
-        
-        UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
-        
-        for (UIView *v in row.subviews) {
-            if ([v isKindOfClass:[UILabel class]]) {
-                UILabel *lbl = (UILabel *)v;
-                lbl.textColor = [UIColor whiteColor]; 
-                lbl.font = [UIFont boldSystemFontOfSize:17]; 
-                [lbl sizeToFit];
-            } else if ([v isKindOfClass:[UISwitch class]]) {
-                UISwitch *sw = (UISwitch *)v;
-                sw.onTintColor = goldColor; 
-            } else if ([v isKindOfClass:[UISlider class]]) {
-                UISlider *sl = (UISlider *)v;
-                sl.minimumTrackTintColor = goldColor;
-                sl.thumbTintColor = goldColor;
-            } else if ([v isKindOfClass:[UISegmentedControl class]]) {
-                UISegmentedControl *seg = (UISegmentedControl *)v;
-                if (@available(iOS 13.0, *)) seg.selectedSegmentTintColor = goldColor;
-                else seg.tintColor = goldColor;
-                [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateNormal];
-                [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]} forState:UIControlStateSelected];
+        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", targetName];
+        if ([[[NSUserDefaults standardUserDefaults] dictionaryRepresentation].allKeys containsObject:saveKey]) {
+            BOOL savedState = [[NSUserDefaults standardUserDefaults] boolForKey:saveKey];
+            if (sw.isOn != savedState) {
+                [sw setOn:savedState animated:NO];
+                [sw sendActionsForControlEvents:UIControlEventValueChanged];
             }
         }
         
-        [scroll addSubview:row];
-        *offset += h + 10; 
-        scroll.contentSize = CGSizeMake(580, *offset + 20); 
-    });
+        CBToggle *btn = [CBToggle buttonWithType:UIButtonTypeCustom];
+        btn.frame = CGRectMake(0, 0, 550, h);
+        btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+        btn.titleEdgeInsets = UIEdgeInsetsMake(0, 15, 0, 0);
+        btn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+        btn.layer.cornerRadius = 10;
+        btn.baseTitle = targetName;
+        btn.targetSwitch = sw;
+        
+        [btn addTarget:btn action:@selector(btnTapped) forControlEvents:UIControlEventTouchUpInside];
+        [btn updateLook]; 
+        
+        [row addSubview:btn];
+    } else {
+        UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+        
+        if (txt) { txt.textColor = [UIColor whiteColor]; txt.font = [UIFont boldSystemFontOfSize:17]; }
+        if (sl) { sl.minimumTrackTintColor = goldColor; sl.thumbTintColor = goldColor; }
+        if (seg) {
+            if (@available(iOS 13.0, *)) seg.selectedSegmentTintColor = goldColor;
+            else seg.tintColor = goldColor;
+            [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateNormal];
+            [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor]} forState:UIControlStateSelected];
+        }
+    }
+    
+    [scroll addSubview:row];
+    *offset += h + 10; 
+    scroll.contentSize = CGSizeMake(580, *offset + 20); 
 }
 
-// مسافات التمرير للأقسام الثلاثة
 static CGFloat tabOffset0 = 10; 
 static CGFloat tabOffset1 = 10; 
 static CGFloat tabOffset2 = 10; 
 
-// دالة حديثة لجلب الشاشة النشطة وتجنب أخطاء البناء في جيت هب
 static UIWindow* getModernKeyWindow() {
     if (@available(iOS 13.0, *)) {
         for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
@@ -131,7 +203,6 @@ static UIWindow* getModernKeyWindow() {
             }
         }
     }
-    // إخفاء التحذير عن המתרجم للإصدارات القديمة
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     return [UIApplication sharedApplication].keyWindow;
@@ -141,10 +212,9 @@ static UIWindow* getModernKeyWindow() {
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
     
-    // --- 1. رادار الأيقونة العائمة ---
     static BOOL didChangeFloatingButton = NO;
     if (!didChangeFloatingButton) {
-        UIWindow *window = getModernKeyWindow(); // استخدام الدالة الجديدة هنا
+        UIWindow *window = getModernKeyWindow();
         if (window) {
             for (UIView *view in window.subviews) {
                 BOOL isFloatingButton = NO;
@@ -192,31 +262,39 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
-    // --- 2. رادار القوائم ---
     UIScrollView *tabPredict = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
     UIScrollView *tabVisuals = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
     UIScrollView *tabAutoPlay = (UIScrollView *)[ipaBlackUI viewWithTag:8002];
     
-    NSArray *predictionTargets = @[@"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"توقع الضربه القويه"];
-    NSArray *visualTargets = @[@"طريقة العرض", @"إزاحة Y", @"إزاحة X", @"مقياس X", @"مقياس Y", @"سمك الخط", @"شفافية الخط", @"حلقة الجيب"];
-    NSArray *autoPlayTargets = @[@"زر الاختصار", @"إيقاف عند اللمس", @"نمط دوران", @"وضع التصويب", @"أسلوب اللعب", @"مستوى اللعب", @"قوة التصويب", @"سرعة تصويب"];
+    // [إصلاح الكسرة]: أضفنا مسميات إضافية كثيرة للرادار لضمان التقاط الزر
+    NSArray *predictionTargets = @[@"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"الكره الخاطئة", @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", @"كسر", @"الكسر", @"وضع الكسر", @"Break", @"توقع الضربه القويه", @"السحب الابتدائي"];
+    
+    NSArray *visualTargets = @[@"طريقة العرض", @"الرسوم", @"إزاحة Y", @"إزاحة X", @"مقياس X", @"مقياس Y", @"سمك الخط", @"شفافية الخط", @"حلقة الجيب"];
+    NSArray *autoPlayTargets = @[@"زر الاختصار", @"إيقاف عند اللمس", @"نمط دوران", @"وضع التصويب", @"أسلوب اللعب", @"البشرنة", @"مستوى اللعب", @"قوة التصويب", @"سرعة تصويب"];
     
     if (tabPredict) {
         for (NSString *name in predictionTargets) {
             UILabel *lbl = findLabel(mainMenu, name);
-            if (lbl) hijackRow(getRowForLabel(lbl), tabPredict, &tabOffset0);
+            if (lbl) hijackRow(getRowForLabel(lbl), name, tabPredict, &tabOffset0);
         }
     }
     if (tabVisuals) {
         for (NSString *name in visualTargets) {
             UILabel *lbl = findLabel(mainMenu, name);
-            if (lbl) hijackRow(getRowForLabel(lbl), tabVisuals, &tabOffset1);
+            if (lbl) hijackRow(getRowForLabel(lbl), name, tabVisuals, &tabOffset1);
         }
     }
     if (tabAutoPlay) {
         for (NSString *name in autoPlayTargets) {
             UILabel *lbl = findLabel(mainMenu, name);
-            if (lbl) hijackRow(getRowForLabel(lbl), tabAutoPlay, &tabOffset2);
+            if (lbl) hijackRow(getRowForLabel(lbl), name, tabAutoPlay, &tabOffset2);
+        }
+    }
+    
+    for (UIView *sub in mainMenu.subviews) {
+        if (sub.tag != 7777) {
+            sub.alpha = 0.0;
+            sub.userInteractionEnabled = NO;
         }
     }
     
@@ -226,7 +304,7 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
 }
 
 // ==========================================
-// 4. دوال مساعدة
+// 5. دوال مساعدة
 // ==========================================
 static NSString* decodeBase64(NSString *encoded) {
     if (!encoded) return @""; 
@@ -237,9 +315,19 @@ static NSString* decodeBase64(NSString *encoded) {
 }
 
 // ==========================================
-// 5. بناء الواجهة الرئيسية (Main UI)
+// 6. بناء الواجهة الرئيسية
 // ==========================================
 %hook GBModMenu
+
+%new
+- (void)handlePan:(UIPanGestureRecognizer *)recognizer {
+    UIView *menuView = (UIView *)self;
+    if (recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged) {
+        CGPoint translation = [recognizer translationInView:menuView.superview];
+        menuView.center = CGPointMake(menuView.center.x + translation.x, menuView.center.y + translation.y);
+        [recognizer setTranslation:CGPointZero inView:menuView.superview];
+    }
+}
 
 %new
 - (void)tabChanged:(UISegmentedControl *)sender {
@@ -283,6 +371,10 @@ static NSString* decodeBase64(NSString *encoded) {
     
     UIView *ipaBlackUI = [mainMenu viewWithTag:7777];
     if (!ipaBlackUI) {
+        tabOffset0 = 10;
+        tabOffset1 = 10;
+        tabOffset2 = 10;
+        
         ipaBlackUI = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 620, 400)];
         ipaBlackUI.tag = 7777;
         
@@ -293,6 +385,9 @@ static NSString* decodeBase64(NSString *encoded) {
         ipaBlackUI.layer.shadowColor = goldColor.CGColor;
         ipaBlackUI.layer.shadowRadius = 15.0;
         ipaBlackUI.layer.shadowOpacity = 0.7; 
+        
+        UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [ipaBlackUI addGestureRecognizer:panGesture];
         
         [mainMenu addSubview:ipaBlackUI];
         

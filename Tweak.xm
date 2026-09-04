@@ -60,7 +60,6 @@ static void fetchProfileImage(void (^completion)(UIImage *)) {
 - (void)btnTapped {
     if (!self.targetSwitch) return;
     
-    // استخدام weakSelf لمنع تسرب الذاكرة (Memory Leak)
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
         __strong typeof(weakSelf) strongSelf = weakSelf;
@@ -147,11 +146,9 @@ static UIView* getRowForLabel(UILabel *lbl) {
     return parent;
 }
 
-// [تنظيف خطير]: تمت إزالة dispatch_async من هنا لمنع كراش الـ (offset pointer)
 static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, CGFloat *offset) {
     if (!row || !scroll) return;
     
-    // التأكد أن هذا الصف يحتوي على أدوات تحكم وليس نصاً عائماً
     BOOL hasControlElement = NO;
     for (UIView *v in row.subviews) {
         if ([v isKindOfClass:[UISwitch class]] || [v isKindOfClass:[UISlider class]] || [v isKindOfClass:[UISegmentedControl class]]) {
@@ -246,7 +243,6 @@ static UIWindow* getModernKeyWindow() {
 #pragma clang diagnostic pop
 }
 
-// رادار القوائم المتصل (يعمل على الخط الرئيسي)
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
     
@@ -283,10 +279,10 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
                         
                         [view addSubview:iconOverlay];
                         
-                        // [تنظيف]: استخدام دالة الكاش للصور
-                        fetchProfileImage^(UIImage *img) {
+                        // [تم الإصلاح هنا]
+                        fetchProfileImage(^(UIImage *img) {
                             iconOverlay.image = img;
-                        };
+                        });
                     }
                     didChangeFloatingButton = YES;
                     break;
@@ -335,7 +331,7 @@ static NSString* decodeBase64(NSString *encoded) {
 }
 
 // ==========================================
-// 8. بناء الواجهة الرئيسية (Main UI)
+// 8. بناء الواجهة الرئيسية
 // ==========================================
 %hook GBModMenu
 
@@ -363,7 +359,6 @@ static NSString* decodeBase64(NSString *encoded) {
 
     [UIView animateWithDuration:0.3 animations:^{
         if (!isMin) {
-            // تصغير
             ipaBlackUI.bounds = CGRectMake(0, 0, 60, 60);
             ipaBlackUI.layer.cornerRadius = 30;
             for (UIView *sub in ipaBlackUI.subviews) {
@@ -372,7 +367,6 @@ static NSString* decodeBase64(NSString *encoded) {
             miniLogo.alpha = 1.0;
             btnMax.hidden = NO;
         } else {
-            // تكبير
             ipaBlackUI.bounds = CGRectMake(0, 0, 620, 400);
             ipaBlackUI.layer.cornerRadius = 15;
             for (UIView *sub in ipaBlackUI.subviews) {
@@ -458,7 +452,6 @@ static NSString* decodeBase64(NSString *encoded) {
         
         [mainMenu addSubview:ipaBlackUI];
         
-        // شعار التصغير
         UIImageView *miniLogo = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 60, 60)];
         miniLogo.tag = 5555;
         miniLogo.layer.cornerRadius = 30;
@@ -468,7 +461,6 @@ static NSString* decodeBase64(NSString *encoded) {
         miniLogo.layer.borderColor = goldColor.CGColor;
         [ipaBlackUI addSubview:miniLogo];
         
-        // زر التصغير الشفاف للعودة للتكبير
         UIButton *btnMax = [UIButton buttonWithType:UIButtonTypeCustom];
         btnMax.frame = CGRectMake(0, 0, 60, 60);
         btnMax.tag = 5556;
@@ -476,13 +468,12 @@ static NSString* decodeBase64(NSString *encoded) {
         btnMax.hidden = YES;
         [ipaBlackUI addSubview:btnMax];
         
-        // [تنظيف]: استخدام دالة الكاش للصور بدلاً من تكرار التحميل
+        // [تم الإصلاح هنا]
         __weak UIImageView *weakMiniLogo = miniLogo;
-        fetchProfileImage^(UIImage *img) {
+        fetchProfileImage(^(UIImage *img) {
             if (weakMiniLogo) weakMiniLogo.image = img;
-        };
+        });
 
-        // زر علامة الناقص ➖
         UIButton *btnMin = [UIButton buttonWithType:UIButtonTypeCustom];
         btnMin.frame = CGRectMake(570, 15, 35, 35);
         [btnMin setTitle:@"➖" forState:UIControlStateNormal];
@@ -493,7 +484,6 @@ static NSString* decodeBase64(NSString *encoded) {
         [btnMin addTarget:self action:@selector(toggleSize) forControlEvents:UIControlEventTouchUpInside];
         [ipaBlackUI addSubview:btnMin];
         
-        // التبويبات
         UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"الإعدادات"]];
         tabs.frame = CGRectMake(20, 15, 530, 40); 
         tabs.tag = 12345;
@@ -507,7 +497,6 @@ static NSString* decodeBase64(NSString *encoded) {
         [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateSelected];
         [ipaBlackUI addSubview:tabs];
         
-        // مناطق التمرير للتبويبات
         for (int i = 0; i < 2; i++) {
             UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 65, 580, 315)];
             scrollView.tag = 8000 + i; 
@@ -520,7 +509,6 @@ static NSString* decodeBase64(NSString *encoded) {
             [ipaBlackUI addSubview:scrollView];
         }
         
-        // قسم الإعدادات
         UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 20, 100, 100)];
         profilePic.layer.cornerRadius = 50;
@@ -530,10 +518,11 @@ static NSString* decodeBase64(NSString *encoded) {
         profilePic.backgroundColor = [UIColor blackColor];
         [tabSettings addSubview:profilePic];
         
+        // [تم الإصلاح هنا]
         __weak UIImageView *weakProfilePic = profilePic;
-        fetchProfileImage^(UIImage *img) {
+        fetchProfileImage(^(UIImage *img) {
             if (weakProfilePic) weakProfilePic.image = img;
-        };
+        });
         
         UILabel *nameLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 135, 580, 30)];
         nameLabel.text = @"IPA BLACK Premium Mod";

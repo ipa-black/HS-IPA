@@ -13,7 +13,7 @@ static __attribute__((constructor)) void anti_debug_protection() {
 }
 
 // ==========================================
-// 2. نظام الكاش للصور (لمنع كراش الذاكرة)
+// 2. نظام الكاش للصور (لمنع استهلاك البطارية)
 // ==========================================
 static UIImage *cachedProfileImage = nil;
 static void fetchProfileImage(void (^completion)(UIImage *)) {
@@ -37,7 +37,39 @@ static void fetchProfileImage(void (^completion)(UIImage *)) {
 }
 
 // ==========================================
-// 3. تعريف الكلاسات
+// 3. مدير الإعدادات (لحفظ تفعيلات المستخدم)
+// ==========================================
+@interface GBConfigManager : NSObject
++ (instancetype)sharedManager;
+- (void)switchToggled:(UISwitch *)sender;
+@end
+
+@implementation GBConfigManager
++ (instancetype)sharedManager {
+    static GBConfigManager *shared = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ shared = [[self alloc] init]; });
+    return shared;
+}
+- (void)switchToggled:(UISwitch *)sender {
+    UIView *row = sender.superview;
+    NSString *title = nil;
+    for (UIView *v in row.subviews) {
+        if ([v isKindOfClass:[UILabel class]]) {
+            title = [(UILabel *)v text];
+            break;
+        }
+    }
+    if (title) {
+        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", title];
+        [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:saveKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+}
+@end
+
+// ==========================================
+// 4. تعريف الكلاسات للواجهة
 // ==========================================
 @interface GBModMenu : UIView
 - (void)tabChanged:(UISegmentedControl *)sender;
@@ -45,57 +77,6 @@ static void fetchProfileImage(void (^completion)(UIImage *)) {
 - (void)openDev;
 - (void)handlePan:(UIPanGestureRecognizer *)recognizer;
 - (void)toggleSize;
-@end
-
-@interface CBToggle : UIButton
-@property (nonatomic, weak) UISwitch *targetSwitch; 
-@property (nonatomic, strong) NSString *baseTitle;
-- (void)updateLook;
-@end
-
-// ==========================================
-// 4. برمجة الأزرار (بشكل آمن تماماً)
-// ==========================================
-@implementation CBToggle
-- (void)btnTapped {
-    if (!self.targetSwitch) return;
-    
-    __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) return;
-        
-        BOOL newState = !strongSelf.targetSwitch.isOn;
-        [strongSelf.targetSwitch setOn:newState animated:YES];
-        [strongSelf.targetSwitch sendActionsForControlEvents:UIControlEventValueChanged];
-        [strongSelf.targetSwitch sendActionsForControlEvents:UIControlEventTouchUpInside];
-        
-        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", strongSelf.baseTitle];
-        [[NSUserDefaults standardUserDefaults] setBool:newState forKey:saveKey];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        
-        [strongSelf updateLook];
-    });
-}
-
-- (void)updateLook {
-    if (!self.targetSwitch) return;
-    
-    UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
-    if (self.targetSwitch.isOn) {
-        [self setTitle:[NSString stringWithFormat:@"✔  %@", self.baseTitle] forState:UIControlStateNormal];
-        [self setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-        self.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.85];
-        self.layer.borderWidth = 1.0;
-        self.layer.borderColor = goldColor.CGColor;
-    } else {
-        [self setTitle:[NSString stringWithFormat:@"☐  %@", self.baseTitle] forState:UIControlStateNormal];
-        [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        self.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.4];
-        self.layer.borderWidth = 1.0;
-        self.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:0.5].CGColor;
-    }
-}
 @end
 
 // ==========================================
@@ -152,8 +133,7 @@ static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, C
     BOOL hasControlElement = NO;
     for (UIView *v in row.subviews) {
         if ([v isKindOfClass:[UISwitch class]] || [v isKindOfClass:[UISlider class]] || [v isKindOfClass:[UISegmentedControl class]]) {
-            hasControlElement = YES;
-            break;
+            hasControlElement = YES; break;
         }
     }
     if (!hasControlElement) return; 
@@ -169,50 +149,34 @@ static void hijackRow(UIView *row, NSString *targetName, UIScrollView *scroll, C
     row.frame = CGRectMake(15, *offset, 550, h);
     row.backgroundColor = [UIColor clearColor];
     
-    UISwitch *sw = nil;
-    UISlider *sl = nil;
-    UISegmentedControl *seg = nil;
-    UILabel *txt = nil;
+    UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
     
+    // [حل مشكلة الكراش وتوقف الهاك]: استعادة استخدام الأزرار الأصلية وتلوينها بدلاً من طمسها
     for (UIView *v in row.subviews) {
-        if ([v isKindOfClass:[UISwitch class]]) sw = (UISwitch *)v;
-        else if ([v isKindOfClass:[UISlider class]]) sl = (UISlider *)v;
-        else if ([v isKindOfClass:[UISegmentedControl class]]) seg = (UISegmentedControl *)v;
-        else if ([v isKindOfClass:[UILabel class]]) txt = (UILabel *)v;
-    }
-    
-    if (sw && txt) {
-        sw.alpha = 0.0; 
-        txt.alpha = 0.0; 
-        
-        NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", targetName];
-        if ([[[NSUserDefaults standardUserDefaults] dictionaryRepresentation].allKeys containsObject:saveKey]) {
-            BOOL savedState = [[NSUserDefaults standardUserDefaults] boolForKey:saveKey];
-            if (sw.isOn != savedState) {
-                [sw setOn:savedState animated:NO];
-                [sw sendActionsForControlEvents:UIControlEventValueChanged];
+        if ([v isKindOfClass:[UILabel class]]) {
+            UILabel *lbl = (UILabel *)v;
+            lbl.textColor = [UIColor whiteColor]; 
+            lbl.font = [UIFont boldSystemFontOfSize:17]; 
+            [lbl sizeToFit];
+        } else if ([v isKindOfClass:[UISwitch class]]) {
+            UISwitch *sw = (UISwitch *)v;
+            sw.onTintColor = goldColor; 
+            [sw addTarget:[GBConfigManager sharedManager] action:@selector(switchToggled:) forControlEvents:UIControlEventValueChanged];
+            
+            NSString *saveKey = [NSString stringWithFormat:@"IPABLACK_SAVE_%@", targetName];
+            if ([[[NSUserDefaults standardUserDefaults] dictionaryRepresentation].allKeys containsObject:saveKey]) {
+                BOOL savedState = [[NSUserDefaults standardUserDefaults] boolForKey:saveKey];
+                if (sw.isOn != savedState) {
+                    [sw setOn:savedState animated:NO];
+                    [sw sendActionsForControlEvents:UIControlEventValueChanged];
+                }
             }
-        }
-        
-        CBToggle *btn = [CBToggle buttonWithType:UIButtonTypeCustom];
-        btn.frame = CGRectMake(0, 0, 550, h);
-        btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-        btn.titleEdgeInsets = UIEdgeInsetsMake(0, 15, 0, 0);
-        btn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
-        btn.layer.cornerRadius = 10;
-        btn.baseTitle = targetName;
-        btn.targetSwitch = sw;
-        
-        [btn addTarget:btn action:@selector(btnTapped) forControlEvents:UIControlEventTouchUpInside];
-        [btn updateLook]; 
-        
-        [row addSubview:btn];
-    } else {
-        UIColor *goldColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
-        
-        if (txt) { txt.textColor = [UIColor whiteColor]; txt.font = [UIFont boldSystemFontOfSize:17]; }
-        if (sl) { sl.minimumTrackTintColor = goldColor; sl.thumbTintColor = goldColor; }
-        if (seg) {
+        } else if ([v isKindOfClass:[UISlider class]]) {
+            UISlider *sl = (UISlider *)v;
+            sl.minimumTrackTintColor = goldColor;
+            sl.thumbTintColor = goldColor;
+        } else if ([v isKindOfClass:[UISegmentedControl class]]) {
+            UISegmentedControl *seg = (UISegmentedControl *)v;
             if (@available(iOS 13.0, *)) seg.selectedSegmentTintColor = goldColor;
             else seg.tintColor = goldColor;
             [seg setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor whiteColor]} forState:UIControlStateNormal];
@@ -246,23 +210,22 @@ static UIWindow* getModernKeyWindow() {
 static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) {
     if (!mainMenu || !ipaBlackUI) return; 
     
+    // --- 1. رادار فرض الصورة على الزر العائم بقوة ---
     static BOOL didChangeFloatingButton = NO;
     if (!didChangeFloatingButton) {
         UIWindow *window = getModernKeyWindow();
         if (window) {
             for (UIView *view in window.subviews) {
-                BOOL isFloatingButton = NO;
-                for (UIGestureRecognizer *rec in view.gestureRecognizers) {
-                    if ([rec isKindOfClass:[UIPanGestureRecognizer class]]) {
-                        isFloatingButton = YES; break;
-                    }
-                }
-                
-                if (isFloatingButton && view.bounds.size.width >= 35 && view.bounds.size.width <= 90) {
+                // التقاط أي مربع عائم في الشاشة غير منتمٍ لواجهتنا
+                if (view.bounds.size.width >= 35 && view.bounds.size.width <= 90 && view.bounds.size.height >= 35 && view.bounds.size.height <= 90) {
+                    if (view.tag == 7777 || view.tag == 888999 || view.tag == 5555 || view.tag == 5556 || view.tag == 6666) continue;
+                    
                     if ([view isKindOfClass:[UIButton class]]) {
                         [(UIButton *)view setImage:nil forState:UIControlStateNormal];
                         [(UIButton *)view setBackgroundImage:nil forState:UIControlStateNormal];
+                        [(UIButton *)view setTitle:@"" forState:UIControlStateNormal];
                     }
+                    view.backgroundColor = [UIColor clearColor];
                     
                     UIImageView *iconOverlay = [view viewWithTag:888999];
                     if (!iconOverlay) {
@@ -279,9 +242,8 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
                         
                         [view addSubview:iconOverlay];
                         
-                        // [تم الإصلاح هنا]
                         fetchProfileImage(^(UIImage *img) {
-                            iconOverlay.image = img;
+                            if (img) iconOverlay.image = img;
                         });
                     }
                     didChangeFloatingButton = YES;
@@ -291,13 +253,17 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
+    // --- 2. رادار القوائم ---
     UIScrollView *tabPredict = (UIScrollView *)[ipaBlackUI viewWithTag:8000];
     
+    // تم إضافة جميع الأسماء (شاملة العصا، الألوان، وكل الهاكات المهمة)
     NSArray *predictionTargets = @[
         @"خطوط التوقع", @"توقع الخصم", @"حدود الطاولة", @"تنبيه الكره الخاطئة", @"الكره الخاطئة", 
         @"حماية البث", @"مؤشرات الجيوب", @"نقاط النهاية", @"مسارات دقيقة", @"توقع الكسرة", 
         @"كسر", @"الكسر", @"وضع الكسر", @"Break", @"توقع الضربه القويه", @"السحب الابتدائي",
-        @"الوان الكرات", @"ألوان الكرات", @"الكرات", @"تمييز", @"تميز", @"سادة ومخطط", @"عصا", @"طول العصا", @"طويلة", @"الرسوم", @"طريقة العرض"
+        @"الوان الكرات", @"ألوان الكرات", @"الكرات", @"تمييز", @"تميز", @"سادة ومخطط", @"عصا", 
+        @"طول العصا", @"طويلة", @"الرسوم", @"طريقة العرض", @"إزاحة", @"مقياس", @"سمك", @"شفافية", 
+        @"زر الاختصار", @"إيقاف عند اللمس", @"دوران", @"تصويب", @"لعب"
     ];
     
     if (tabPredict) {
@@ -307,9 +273,10 @@ static void continuousRadar(__weak UIView *mainMenu, __weak UIView *ipaBlackUI) 
         }
     }
     
+    // [الحل الجذري لاختفاء التفعيلات]: جعل الواجهة القديمة شبه شفافة بدلاً من إخفائها كلياً!
     for (UIView *sub in mainMenu.subviews) {
         if (sub.tag != 7777) {
-            sub.alpha = 0.0;
+            sub.alpha = 0.01; 
             sub.userInteractionEnabled = NO;
         }
     }
@@ -331,7 +298,7 @@ static NSString* decodeBase64(NSString *encoded) {
 }
 
 // ==========================================
-// 8. بناء الواجهة الرئيسية
+// 8. بناء الواجهة الرئيسية (المنيو)
 // ==========================================
 %hook GBModMenu
 
@@ -341,9 +308,9 @@ static NSString* decodeBase64(NSString *encoded) {
     if (!ipaBlackUI) return;
     
     if (recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged) {
-        CGPoint translation = [recognizer translationInView:self];
+        CGPoint translation = [recognizer translationInView:ipaBlackUI.superview];
         ipaBlackUI.center = CGPointMake(ipaBlackUI.center.x + translation.x, ipaBlackUI.center.y + translation.y);
-        [recognizer setTranslation:CGPointZero inView:self];
+        [recognizer setTranslation:CGPointZero inView:ipaBlackUI.superview];
     }
 }
 
@@ -354,37 +321,25 @@ static NSString* decodeBase64(NSString *encoded) {
     
     UIView *miniLogo = [ipaBlackUI viewWithTag:5555];
     UIButton *btnMax = (UIButton *)[ipaBlackUI viewWithTag:5556];
+    UIView *dragHandle = [ipaBlackUI viewWithTag:6666]; // إطار السحب
     
     BOOL isMin = ipaBlackUI.bounds.size.width < 100;
 
     [UIView animateWithDuration:0.3 animations:^{
         if (!isMin) {
+            // [تصغير نظيف]: لا نتدخل بشفافية الأزرار لمنع تعطيل الهاك، نقص الإطار فقط
             ipaBlackUI.bounds = CGRectMake(0, 0, 60, 60);
             ipaBlackUI.layer.cornerRadius = 30;
-            for (UIView *sub in ipaBlackUI.subviews) {
-                if (sub.tag != 5555 && sub.tag != 5556) sub.alpha = 0.0;
-            }
             miniLogo.alpha = 1.0;
             btnMax.hidden = NO;
+            dragHandle.frame = CGRectMake(0, 0, 60, 60);
         } else {
+            // [تكبير]
             ipaBlackUI.bounds = CGRectMake(0, 0, 620, 400);
             ipaBlackUI.layer.cornerRadius = 15;
-            for (UIView *sub in ipaBlackUI.subviews) {
-                if (sub.tag != 5555 && sub.tag != 5556) {
-                    if (sub.tag == 8000 || sub.tag == 8001) {
-                        UISegmentedControl *tabs = (UISegmentedControl *)[ipaBlackUI viewWithTag:12345];
-                        if (tabs && (sub.tag - 8000) != tabs.selectedSegmentIndex) {
-                            sub.alpha = 0.0;
-                        } else {
-                            sub.alpha = 1.0;
-                        }
-                    } else {
-                        sub.alpha = 1.0;
-                    }
-                }
-            }
             miniLogo.alpha = 0.0;
             btnMax.hidden = YES;
+            dragHandle.frame = CGRectMake(0, 0, 550, 60);
         }
     }];
 }
@@ -393,11 +348,9 @@ static NSString* decodeBase64(NSString *encoded) {
 - (void)tabChanged:(UISegmentedControl *)sender {
     UIView *ipaBlackUI = [self viewWithTag:7777];
     if (!ipaBlackUI) return;
-    
     for (int i = 0; i < 2; i++) {
         UIView *container = [ipaBlackUI viewWithTag:8000 + i];
         container.hidden = (i != sender.selectedSegmentIndex);
-        container.alpha = (i == sender.selectedSegmentIndex) ? 1.0 : 0.0;
     }
 }
 
@@ -446,12 +399,19 @@ static NSString* decodeBase64(NSString *encoded) {
         ipaBlackUI.layer.shadowColor = goldColor.CGColor;
         ipaBlackUI.layer.shadowRadius = 15.0;
         ipaBlackUI.layer.shadowOpacity = 0.7; 
-        
-        UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-        [ipaBlackUI addGestureRecognizer:panGesture];
+        ipaBlackUI.clipsToBounds = YES; // لقص المحتوى عند التصغير
         
         [mainMenu addSubview:ipaBlackUI];
         
+        // [حل مشكلة السحب]: شريط شفاف علوي للتحريك فقط، لا يمنع النزول في القائمة!
+        UIView *dragHandle = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 550, 60)];
+        dragHandle.tag = 6666;
+        dragHandle.backgroundColor = [UIColor clearColor];
+        UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [dragHandle addGestureRecognizer:panGesture];
+        [ipaBlackUI addSubview:dragHandle];
+        
+        // أيقونة التصغير (اللوجو)
         UIImageView *miniLogo = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 60, 60)];
         miniLogo.tag = 5555;
         miniLogo.layer.cornerRadius = 30;
@@ -468,12 +428,12 @@ static NSString* decodeBase64(NSString *encoded) {
         btnMax.hidden = YES;
         [ipaBlackUI addSubview:btnMax];
         
-        // [تم الإصلاح هنا]
         __weak UIImageView *weakMiniLogo = miniLogo;
         fetchProfileImage(^(UIImage *img) {
             if (weakMiniLogo) weakMiniLogo.image = img;
         });
 
+        // زر علامة الناقص ➖
         UIButton *btnMin = [UIButton buttonWithType:UIButtonTypeCustom];
         btnMin.frame = CGRectMake(570, 15, 35, 35);
         [btnMin setTitle:@"➖" forState:UIControlStateNormal];
@@ -484,6 +444,7 @@ static NSString* decodeBase64(NSString *encoded) {
         [btnMin addTarget:self action:@selector(toggleSize) forControlEvents:UIControlEventTouchUpInside];
         [ipaBlackUI addSubview:btnMin];
         
+        // التبويبات 
         UISegmentedControl *tabs = [[UISegmentedControl alloc] initWithItems:@[@"التوقع", @"الإعدادات"]];
         tabs.frame = CGRectMake(20, 15, 530, 40); 
         tabs.tag = 12345;
@@ -497,6 +458,7 @@ static NSString* decodeBase64(NSString *encoded) {
         [tabs setTitleTextAttributes:@{NSForegroundColorAttributeName: [UIColor blackColor], NSFontAttributeName: [UIFont boldSystemFontOfSize:15]} forState:UIControlStateSelected];
         [ipaBlackUI addSubview:tabs];
         
+        // [حل مشكلة النزول]: القائمة الآن قابلة للتمرير والنزول للنهاية
         for (int i = 0; i < 2; i++) {
             UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:CGRectMake(20, 65, 580, 315)];
             scrollView.tag = 8000 + i; 
@@ -507,8 +469,10 @@ static NSString* decodeBase64(NSString *encoded) {
             scrollView.scrollEnabled = YES;
             scrollView.hidden = (i != 0);
             [ipaBlackUI addSubview:scrollView];
+            [ipaBlackUI sendSubviewToBack:scrollView]; // لضمان عدم إعاقة زر السحب
         }
         
+        // إعدادات المطور
         UIScrollView *tabSettings = (UIScrollView *)[ipaBlackUI viewWithTag:8001];
         UIImageView *profilePic = [[UIImageView alloc] initWithFrame:CGRectMake(240, 20, 100, 100)];
         profilePic.layer.cornerRadius = 50;
@@ -518,7 +482,6 @@ static NSString* decodeBase64(NSString *encoded) {
         profilePic.backgroundColor = [UIColor blackColor];
         [tabSettings addSubview:profilePic];
         
-        // [تم الإصلاح هنا]
         __weak UIImageView *weakProfilePic = profilePic;
         fetchProfileImage(^(UIImage *img) {
             if (weakProfilePic) weakProfilePic.image = img;

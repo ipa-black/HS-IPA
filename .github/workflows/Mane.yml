@@ -1,90 +1,68 @@
-name: Build IPA BLACK Tweak
+
+name: Build MWDebugMonitor Dylib
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+  push:
+    paths:
+      - "MWDebugMonitor.xm"
+      - "Makefile"
+      - ".github/workflows/build.yml"
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: 📥 سحب الكود (Checkout Code)
+      - name: Checkout repository
         uses: actions/checkout@v4
-        
-      - name: 🛠️ تثبيت الأدوات المساعدة (Install ldid)
-        run: |
-          brew install ldid
 
-      - name: ⚙️ تثبيت بيئة Theos و SDKs
+      - name: Install Theos
         run: |
-          git clone --recursive https://github.com/theos/theos.git ${{ github.workspace }}/theos
-          rm -rf ${{ github.workspace }}/theos/sdks
-          git clone https://github.com/theos/sdks.git ${{ github.workspace }}/theos/sdks
+          git clone --recursive \
+            https://github.com/theos/theos.git \
+            "$GITHUB_WORKSPACE/theos"
 
-      - name: 📝 إنشاء ملفات البناء تلقائياً (Auto-Generate Files)
+          echo "THEOS=$GITHUB_WORKSPACE/theos" \
+            >> "$GITHUB_ENV"
+
+      - name: Configure iOS SDK
         run: |
-          cat << 'EOF' > Makefile
-          TARGET := iphone:clang:latest:13.0
-          ARCHS = arm64
-          DEBUG = 0
-          FINALPACKAGE = 1
-          
-          TWEAK_NAME = IPABLACK
-          
-          IPABLACK_FILES = Tweak.xm
-          IPABLACK_FRAMEWORKS = UIKit
-          IPABLACK_CFLAGS = -fobjc-arc
-          
-          include $(THEOS)/makefiles/common.mk
-          include $(THEOS_MAKE_PATH)/tweak.mk
-          EOF
-          
-          cat << 'EOF' > control
-          Package: com.ipablack.mod
-          Name: IPA BLACK Premium
-          Depends: mobilesubstrate
-          Version: 1.0.0
-          Architecture: iphoneos-arm
-          Description: IPA BLACK Premium Mod
-          Maintainer: IPA BLACK
-          Author: IPA BLACK
-          Section: Tweaks
-          EOF
-          
-          cat << 'EOF' > IPABLACK.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>Filter</key>
-              <dict>
-                  <key>Bundles</key>
-                  <array>
-                      <string>com.miniclip.8ballpoolmult</string>
-                  </array>
-              </dict>
-          </dict>
-          </plist>
-          EOF
+          mkdir -p "$THEOS/sdks"
 
-      - name: 🔨 بناء المود (Compile Tweak)
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+
+          ln -s "$SDK" \
+            "$THEOS/sdks/iPhoneOS.sdk"
+
+      - name: Build Dylib
         run: |
-          export THEOS=${{ github.workspace }}/theos
-          make package FINALPACKAGE=1
+          set -euo pipefail
+          make clean
+          make FINALPACKAGE=1 \
+            ARCHS=arm64 \
+            DEBUG=0
 
-      - name: 📁 تجميع الملفات النهائية (Gather Final Files)
+      - name: Collect Dylib
         run: |
-          mkdir -p Final_Build
-          # نسخ ملف الجلبريك
-          cp packages/*.deb Final_Build/
-          # البحث عن ملف الدايلب ونسخه بجانبه
-          find .theos/obj -name "*.dylib" -exec cp {} Final_Build/ \;
+          set -euo pipefail
 
-      - name: 📦 رفع الملفات الجاهزة (Upload Artifacts)
+          mkdir -p output
+
+          FILE=$(find .theos \
+            -name "MWDebugMonitor.dylib" \
+            -type f | head -n 1)
+
+          test -n "$FILE"
+
+          cp "$FILE" \
+            output/MWDebugMonitor.dylib
+
+          file output/MWDebugMonitor.dylib
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: IPA_BLACK_Build
-          path: Final_Build/
+          name: MWDebugMonitor-iOS-ARM64
+          path: output/MWDebugMonitor.dylib
+          if-no-files-found: error
